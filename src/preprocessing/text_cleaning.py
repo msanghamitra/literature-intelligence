@@ -18,12 +18,17 @@ def build_corpus():
     #Load meta produced by arvix_loader.py
     df = pd.read_csv(RAW_METADATA_PATH)
 
+    # Parse dates so we can filter later by time
+    df["published"] = pd.to_datetime(df["published"], errors="coerce")
+    df["updated"] = pd.to_datetime(df["updated"], errors="coerce")
+
     #Clean title + Summary
     df['title_clean'] = df['title'].apply(basic_clean)
     df['abstract_clean'] = df['summary'].apply(basic_clean)
 
     #Main Text Unit = title + abstract
     df["text_unit"] = df["title_clean"]+". "+ df["abstract_clean"]
+
 
     #Columns needed downstream
     cols = [
@@ -46,5 +51,4 @@ def build_corpus():
     return cleaned
 
 if __name__== "__main__":
-    df_clean = build_corpus()
-    print(df_clean.head(10))
+    build_corpus()
