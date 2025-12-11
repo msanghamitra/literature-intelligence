@@ -34,7 +34,7 @@ def get_summarizer():
 #You can easily expose max_length / min_length as sliders in the UI.
 #It uses get_summarizer() so it doesn’t reload the model.
 
-def summarizer_text(text: str,
+def summarize_text(text: str,
                     max_length: int=128,
                     min_length: int=32) -> str:
     if not text or not text.strip():
@@ -53,7 +53,7 @@ def summarizer_text(text: str,
 # 3.Summarize Batch
 # Its a function you can from one of a script, a CLI, a background job or even from another app
 
-def summarizer_batch(texts: list[str],
+def summarize_batch(texts: list[str],
                    max_length: int = 128,
                    min_length: int = 32) -> list[str]:
     summarizer = get_summarizer()
@@ -84,7 +84,7 @@ def run_full_corpus_summarisation() -> pd.DataFrame:
     df = load_clean_corpus()
 
     texts = df["text_unit"].astype(str).tolist()
-    summaries = summarizer_batch(texts)
+    summaries = summarize_batch(texts)
 
     df["summary"] = summaries
     df.to_csv(CORPUS_SUMMARY_PATH, index=False)
