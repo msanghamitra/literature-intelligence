@@ -20,7 +20,6 @@ from src.models.summarizer import (
 # -------------------------------------------------
 @st.cache_data(show_spinner=False)
 def get_corpus() -> pd.DataFrame:
-    # ❗ You forgot parentheses here before: load_summary_corpus()
     df = load_summary_corpus()
 
     # Normalise title column
