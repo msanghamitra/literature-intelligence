@@ -55,7 +55,7 @@ def init_session_state():
 # -----------------------
 def render_search_controls():
     """Render search input and controls"""
-    st.markdown("### Search")
+    st.markdown("### 🔍 Search Papers")
     
     search_mode = st.radio(
         "Search mode",
@@ -65,7 +65,7 @@ def render_search_controls():
     )
     
     query = st.text_input(
-        "Topic",
+        "Research topic",
         placeholder="e.g. machine learning, diffusion models, federated learning…",
         label_visibility="collapsed"
     )
@@ -75,7 +75,7 @@ def render_search_controls():
         value="",
     )
     
-    submitted = st.button("🔍 Search", type="primary")
+    submitted = st.button("Search arXiv", type="primary", use_container_width=True)
     
     return {
         "query": query,
@@ -131,7 +131,7 @@ def render_paper_card(paper, index, services, max_len, min_len):
 
 def render_topics_tab(services):
     """Render topics analysis tab - PURE UI LOGIC"""
-    st.header("Topics (from current search results)")
+    st.header("📊 Topic Insights")
     
     if not st.session_state.search_results:
         st.info("Run a search in Summaries to generate topics.")
@@ -158,10 +158,14 @@ def render_topics_tab(services):
             
             if topic_data.get("success"):
                 st.session_state.topic_data = topic_data
-                st.success(f"Generated {topic_data.get('num_topics', 0)} topics!")
+                st.success(f"✅ Generated {topic_data.get('num_topics', 0)} topics from {len(papers)} papers!")
             else:
-                st.warning(topic_data.get("error", "Could not generate topics"))
-                st.session_state.topic_data = {"error": topic_data.get("error")}
+                error_msg = topic_data.get("error", "Could not generate topics")
+                st.warning(error_msg)
+                # Provide helpful suggestions
+                if "generic" in error_msg.lower() or "meaningful" in error_msg.lower():
+                    st.info("💡 **Tip**: Try a more specific search query or search for more papers.")
+                st.session_state.topic_data = {"error": error_msg}
                 return
     
     topic_data = st.session_state.topic_data
@@ -179,54 +183,177 @@ def render_topics_tab(services):
     if "topics_df" in topic_data and not topic_data["topics_df"].empty:
         topics_df = topic_data["topics_df"]
         
-        st.subheader("Topic list")
-        st.dataframe(topics_df, width="stretch")
+        # Clearer topic display
+        st.subheader(f"📊 Found {len(topics_df)} Topics")
         
-        # Topic selection UI
-        if "topic_id" in topics_df.columns:
-            topic_ids = topics_df["topic_id"].tolist()
-            topic_names = [f"Topic {tid} ({topics_df.loc[topics_df['topic_id'] == tid, 'doc_count'].iloc[0]} papers)" 
-                          for tid in topic_ids]
+        # Summary statistics
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Topics", len(topics_df))
+        with col2:
+            st.metric("Total Papers", len(papers))
+        with col3:
+            avg_papers = topics_df['doc_count'].mean()
+            st.metric("Avg Papers/Topic", f"{avg_papers:.1f}")
+        
+        # Display each topic in a clear, visual way
+        for idx, row in topics_df.iterrows():
+            topic_id = row['topic_id']
+            topic_name = row.get('topic_name', f"Topic {topic_id}")
+            doc_count = row['doc_count']
+            keywords = row['keywords'].split(', ')
             
-            selected_topic_name = st.selectbox("Browse papers by topic", topic_names)
-            
-            # Extract topic ID from selection
-            selected_topic_id = topic_ids[topic_names.index(selected_topic_name)]
-            
-            # Get papers in selected topic using service
-            papers_in_topic = services["topics"].get_papers_in_topic(
+            # Create an expandable card for each topic
+            with st.expander(f"**{topic_name}** — {doc_count} paper{'s' if doc_count != 1 else ''}", expanded=idx==0):
+                # Two columns: keywords on left, papers on right
+                col_left, col_right = st.columns([1, 2])
+                
+                with col_left:
+                    st.markdown("**🔑 Key Terms**")
+                    
+                    # Display keywords as badges with better formatting
+                    badge_html = '<div style="margin-bottom: 10px;">'
+                    for i, kw in enumerate(keywords[:10]):  # Show up to 10 keywords
+                        # Different colors for different keywords
+                        colors = ['#3B82F6', '#10B981', '#8B5CF6', '#EF4444', '#F59E0B']
+                        color = colors[i % len(colors)]
+                        badge_html += f'''
+                        <span style="
+                            background-color: {color};
+                            color: white;
+                            padding: 6px 12px;
+                            margin: 4px;
+                            border-radius: 20px;
+                            font-size: 0.9em;
+                            display: inline-block;
+                            font-weight: 500;
+                        ">{kw}</span>
+                        '''
+                    badge_html += '</div>'
+                    st.markdown(badge_html, unsafe_allow_html=True)
+                    
+                    # Topic stats
+                    st.markdown(f"**📈 Coverage:** {doc_count} papers ({doc_count/len(papers)*100:.1f}% of total)")
+                
+                with col_right:
+                    st.markdown("**📚 Papers in this topic**")
+                    
+                    # Get papers in this topic
+                    papers_in_topic = services["topics"].get_papers_in_topic(
+                        topic_id, 
+                        papers, 
+                        topic_data
+                    )
+                    
+                    if papers_in_topic:
+                        # Display papers in a clean list
+                        for i, paper in enumerate(papers_in_topic[:5]):  # Show up to 5 papers
+                            with st.container(border=True):
+                                st.markdown(f"**{i+1}. {paper.title}**")
+                                
+                                # Quick metadata
+                                col_a, col_b = st.columns([3, 1])
+                                with col_a:
+                                    if hasattr(paper, 'authors'):
+                                        st.caption(f"👥 {paper.authors[:50]}...")
+                                with col_b:
+                                    if st.button("Select", key=f"select_{topic_id}_{paper.id}", 
+                                                help="Select for Q&A", type="secondary", size="small"):
+                                        st.session_state.selected_paper_id = paper.id
+                                        st.success(f"Selected '{paper.title[:50]}...'")
+                                        st.rerun()
+                        
+                        if len(papers_in_topic) > 5:
+                            st.caption(f"... and {len(papers_in_topic) - 5} more papers")
+                    else:
+                        st.info("No papers found in this topic")
+        
+        # Topic selection for detailed view
+        st.markdown("---")
+        st.subheader("🔬 Explore a Specific Topic")
+        
+        # Create a dropdown with better topic names
+        topic_options = []
+        for idx, row in topics_df.iterrows():
+            topic_id = row['topic_id']
+            topic_name = row.get('topic_name', f"Topic {topic_id}")
+            doc_count = row['doc_count']
+            topic_options.append((topic_id, f"{topic_name} ({doc_count} papers)"))
+        
+        # Let user select a topic to explore
+        selected_option = st.selectbox(
+            "Choose a topic to explore in detail:",
+            options=[opt[1] for opt in topic_options],
+            index=0
+        )
+        
+        # Find the selected topic ID
+        selected_topic_id = None
+        for topic_id, option_text in topic_options:
+            if option_text == selected_option:
+                selected_topic_id = topic_id
+                break
+        
+        if selected_topic_id is not None:
+            # Get papers in the selected topic
+            selected_papers = services["topics"].get_papers_in_topic(
                 selected_topic_id, 
                 papers, 
                 topic_data
             )
             
-            if papers_in_topic:
-                st.write(f"**Papers in {selected_topic_name}:**")
+            if selected_papers:
+                st.markdown(f"### 📄 Papers in '{selected_option}'")
                 
-                # Paper selection within topic (UI only)
-                paper_titles = [p.title for p in papers_in_topic]
-                chosen_title = st.selectbox("Select a paper", paper_titles, key="topic_paper_select")
+                # Display selected topic's keywords
+                selected_topic_row = topics_df[topics_df['topic_id'] == selected_topic_id].iloc[0]
+                selected_keywords = selected_topic_row['keywords'].split(', ')
                 
-                if chosen_title:
-                    chosen_paper = next(p for p in papers_in_topic if p.title == chosen_title)
-                    if st.button("Use this paper for Q&A", key="use_for_qa"):
-                        st.session_state.selected_paper_id = chosen_paper.id
-                        st.success("Selected. Go to the Q&A tab.")
+                st.markdown("**Key terms:** " + ", ".join([f"`{kw}`" for kw in selected_keywords[:5]]))
+                
+                # Show all papers in this topic
+                for paper in selected_papers:
+                    with st.container(border=True):
+                        st.markdown(f"#### {paper.title}")
                         
-                    # Show paper details
-                    with st.expander("Paper details"):
-                        st.write(f"**Title:** {chosen_paper.title}")
-                        st.write(f"**Authors:** {chosen_paper.authors}")
-                        st.write(f"**Abstract:** {chosen_paper.abstract[:300]}...")
+                        # Paper details in columns
+                        col_info, col_action = st.columns([4, 1])
+                        
+                        with col_info:
+                            if hasattr(paper, 'authors'):
+                                st.markdown(f"**Authors:** {paper.authors}")
+                            if hasattr(paper, 'published'):
+                                st.caption(f"📅 Published: {paper.published}")
+                            
+                            # Abstract preview
+                            with st.expander("Abstract preview"):
+                                st.write(paper.abstract[:300] + "..." if len(paper.abstract) > 300 else paper.abstract)
+                        
+                        with col_action:
+                            if st.button("🔗 Select", key=f"explore_{paper.id}", 
+                                        help="Select this paper for Q&A", type="primary"):
+                                st.session_state.selected_paper_id = paper.id
+                                st.success("✅ Paper selected! Go to Q&A tab.")
+                                st.rerun()
+                
+                # Download option for this topic's papers
+                st.download_button(
+                    label="📥 Download Topic Papers",
+                    data="\n\n".join([f"Title: {p.title}\nAuthors: {p.authors}\nAbstract: {p.abstract[:200]}..." 
+                                     for p in selected_papers]),
+                    file_name=f"topic_{selected_topic_id}_papers.txt",
+                    mime="text/plain"
+                )
             else:
-                st.info("No papers found in this topic.")
+                st.info("No papers found in the selected topic.")
+        
     else:
         st.info("No topics generated. Try a different search.")
 
 
 def render_qa_tab(services):
     """Render Q&A tab"""
-    st.header("Q&A (from full paper PDF)")
+    st.header("❓ Q&A from Paper PDF")
     
     if not st.session_state.search_results:
         st.info("Run a search first in Summaries.")
@@ -262,13 +389,18 @@ def render_qa_tab(services):
         return
     
     # Q&A interface
-    question = st.text_input("Ask a question about this paper (full PDF)")
+    st.markdown("### Ask a question about this paper")
+    question = st.text_area("Enter your question:", placeholder="e.g., What methodology did the authors use? What were the main findings?", height=100)
     
-    if st.button("🤖 Answer"):
+    col1, col2 = st.columns([1, 6])
+    with col1:
+        ask_button = st.button("🤖 Get Answer", type="primary", use_container_width=True)
+    
+    if ask_button:
         if not question or not question.strip():
             st.warning("Please enter a question.")
         else:
-            with st.spinner("Retrieving relevant sections + answering…"):
+            with st.spinner("Searching paper and generating answer…"):
                 answer = services["qa"].answer_question(selected_paper, question)
             
             if answer.get("error"):
@@ -278,21 +410,25 @@ def render_qa_tab(services):
                 st.write(answer.get("answer", ""))
                 
                 # Show metrics
+                cols = st.columns(3)
                 if "score" in answer:
-                    st.caption(f"QA confidence: {answer['score']:.3f}")
+                    with cols[0]:
+                        st.metric("Confidence", f"{answer['score']:.2f}")
                 if "similarity" in answer:
-                    st.caption(f"Best chunk similarity: {answer['similarity']:.3f}")
+                    with cols[1]:
+                        st.metric("Relevance", f"{answer['similarity']:.2f}")
                 if "page" in answer:
-                    st.caption(f"Page: {answer['page']}")
+                    with cols[2]:
+                        st.metric("Page", answer["page"])
                 
                 # Show context if available
                 if answer.get("context_snippet"):
-                    with st.expander("Context snippet (from PDF)"):
+                    with st.expander("📄 Source from paper"):
                         st.write(answer["context_snippet"])
                 
                 # Debug info
                 if answer.get("chunks_used"):
-                    with st.expander("Chunks used (debug)"):
+                    with st.expander("🔍 Technical details"):
                         st.json(answer["chunks_used"])
 
 
@@ -305,27 +441,100 @@ def main():
     init_session_state()
     services = init_services()
     
-    # Page configuration
+    # ============================================
+    # ADD THIS PART - START (Browser Tab Settings)
+    # ============================================
+    # Page configuration - FOR BROWSER TAB
     st.set_page_config(
-        page_title="Research Librarian",
+        page_title="PAPERMINER - Research Paper Explorer",
         layout="wide",
-        page_icon="📚"
+        page_icon="📚",  # This becomes the browser tab favicon
+        initial_sidebar_state="expanded"
     )
+
+    # Custom CSS for the visible page header
+    st.markdown("""
+    <style>
+    .paperminer-main {
+        text-align: center;
+        margin: 2rem 0 3rem 0;
+        padding: 1rem;
+    }
+    .paperminer-title {
+        font-size: 3.5rem;
+        font-weight: 900;
+        color: #FFD700;  /* Bright yellow */
+        text-shadow: 2px 2px 0 #FF8C00, 4px 4px 0 rgba(0,0,0,0.15);
+        letter-spacing: 1px;
+        margin-bottom: 0.5rem;
+    }
+    .paperminer-subtitle {
+        font-size: 1.3rem;
+        color: #4B5563;
+        font-weight: 400;
+        margin-top: 0;
+    }
+    .divider {
+        height: 4px;
+        background: linear-gradient(90deg, #FFD700, #FF8C00, #FFD700);
+        width: 200px;
+        margin: 1rem auto;
+        border-radius: 2px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Visible header on the page - NOT in browser tab
+    st.markdown("""
+    <div class="paperminer-main">
+        <h1 class="paperminer-title">📚 PAPERMINER</h1>
+        <div class="divider"></div>
+        <p class="paperminer-subtitle">Your AI-powered research paper explorer</p>
+    </div>
+    """, unsafe_allow_html=True)
+    # ==========================================
+    # ADD THIS PART - END
+    # ==========================================
     
     # Sidebar settings
-    st.sidebar.title("Settings")
+    st.sidebar.markdown("### ⚙️ Settings")
+    
+    st.sidebar.markdown("#### Search Settings")
     top_k = st.sidebar.slider("Number of results", 5, 50, 10, step=5)
     max_len = st.sidebar.slider("Max summary length", 64, 256, 128, step=16)
     min_len = st.sidebar.slider("Min summary length", 16, 64, 32, step=8)
     
-    # Main tabs
-    tab_summaries, tab_topics, tab_qa = st.tabs(["Summaries", "Topic Insights", "Q&A"])
+    # Topic analysis tips
+    with st.sidebar.expander("💡 How to get better topics"):
+        st.markdown("""
+        - **Search for 10+ papers** for clearer topics
+        - Use **specific queries** (e.g., "federated learning privacy" vs "machine learning")
+        - Try different **arXiv categories** to focus your search
+        - Generic words (data, model, using) are automatically filtered out
+        """)
+    
+    # About section
+    with st.sidebar.expander("ℹ️ About PAPERMINER"):
+        st.markdown("""
+        **PAPERMINER** helps you:
+        
+        1. **Search** arXiv papers by topic
+        2. **Discover** research trends through topic analysis
+        3. **Summarize** papers automatically
+        4. **Ask questions** about full paper PDFs
+        
+        Built for researchers, students, and curious minds.
+        """)
+    
+    # Main tabs with icons
+    tab_summaries, tab_topics, tab_qa = st.tabs(["📄 Paper Summaries", "📊 Topic Insights", "❓ Paper Q&A"])
     
     # -----------------------
     # Summaries Tab
     # -----------------------
     with tab_summaries:
-        st.header("Search papers & view summaries")
+        st.markdown("### 📄 Search & Summarize Papers")
+        st.markdown("Find arXiv papers and generate AI-powered summaries.")
         
         # Render search controls
         search_inputs = render_search_controls()
@@ -347,18 +556,23 @@ def main():
                     st.session_state.selected_paper_id = None  # Reset selection
                     st.session_state.topic_data = None  # Reset topics
                     
-                    st.success(f"Found {len(results)} papers")
+                    # Show topic analysis readiness
+                    st.success(f"✅ Found {len(results)} papers")
+                    if len(results) >= 5:
+                        st.info(f"✓ Enough papers for topic analysis! Go to **Topic Insights** tab.")
+                    else:
+                        st.warning(f"⚠ Need at least 5 papers for topic analysis. Found {len(results)}.")
                 else:
                     st.info("No papers found for this query.")
         
         # Display results
         if st.session_state.search_results:
-            st.write(f"Showing **{len(st.session_state.search_results)}** papers.")
+            st.markdown(f"### 📚 Showing {len(st.session_state.search_results)} Papers")
             
             for idx, paper in enumerate(st.session_state.search_results):
                 render_paper_card(paper, idx, services, max_len, min_len)
         else:
-            st.info("Search for a topic to see results.")
+            st.info("🔍 Enter a research topic above to search for papers.")
     
     # -----------------------
     # Topics Tab

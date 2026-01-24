@@ -5,6 +5,7 @@ USES: src/models/topics.py (existing model)
 """
 import pandas as pd
 from typing import List, Dict, Any, Optional
+import re
 
 # Import existing model
 from src.preprocessing.topic_modeller import build_topics, load_topics, load_corpus_with_topics
@@ -15,7 +16,44 @@ class TopicService:
     """Service that USES the existing topics model"""
     
     def __init__(self):
-        pass
+        # Custom stop words list to filter out generic terms
+        self.custom_stop_words = {
+            # Generic ML/AI terms
+            'data', 'model', 'models', 'learning', 'algorithm', 'algorithms',
+            'method', 'methods', 'approach', 'approaches', 'framework',
+            'problem', 'problems', 'task', 'tasks',
+            
+            # Generic verbs/process words
+            'using', 'use', 'used', 'propose', 'proposed', 'proposes',
+            'show', 'shows', 'shown', 'demonstrate', 'demonstrates',
+            'introduce', 'introduces', 'introduced', 'present', 'presents',
+            'propose', 'proposes', 'proposed', 'develop', 'develops',
+            'propose', 'proposes', 'proposed', 'evaluate', 'evaluates',
+            
+            # Generic adjectives/quality words
+            'novel', 'new', 'effective', 'efficient', 'efficiency',
+            'better', 'improved', 'high', 'low', 'large', 'small',
+            'different', 'various', 'multiple', 'several', 'recent',
+            'state', 'art', 'existing', 'current', 'previous',
+            
+            # Generic nouns
+            'time', 'performance', 'result', 'results', 'accuracy',
+            'analysis', 'experiment', 'experiments', 'evaluation',
+            'application', 'applications', 'work', 'study', 'paper',
+            
+            # Math/CS generic terms
+            'function', 'functions', 'parameter', 'parameters',
+            'value', 'values', 'set', 'sets', 'number', 'numbers',
+            
+            # Common ML terms that are too generic
+            'network', 'networks', 'feature', 'features', 'layer', 'layers',
+            'training', 'train', 'test', 'testing', 'validation',
+            'dataset', 'datasets', 'sample', 'samples',
+            
+            # Common academic words
+            'research', 'researchers', 'field', 'fields', 'area', 'areas',
+            'work', 'works', 'study', 'studies', 'paper', 'papers',
+        }
     
     def generate_topics_from_corpus(self, n_topics: int = 8) -> Dict[str, Any]:
         """
@@ -95,16 +133,55 @@ class TopicService:
             # Determine number of topics (1 topic per 3-5 papers)
             n_topics = min(8, max(2, len(texts) // 3))
             
-            # Vectorize
+            # Custom tokenizer with better filtering
+            def custom_tokenizer(text):
+                # Convert to lowercase
+                text = text.lower()
+                # Remove special characters but keep hyphens in words like "pre-trained"
+                text = re.sub(r'[^\w\s\-]', ' ', text)
+                # Tokenize
+                tokens = text.split()
+                # Filter tokens
+                filtered_tokens = []
+                for token in tokens:
+                    # Remove generic words
+                    if token in self.custom_stop_words:
+                        continue
+                    # Remove short words (less than 3 chars) unless they're acronyms
+                    if len(token) < 3 and not token.isupper():
+                        continue
+                    # Remove numbers and single characters
+                    if token.isdigit() or len(token) == 1:
+                        continue
+                    # Remove common verb endings
+                    if token.endswith(('ing', 'ed', 's', 'es', 'ly')):
+                        stem = token.rstrip('ingedsly')
+                        if stem in self.custom_stop_words:
+                            continue
+                    filtered_tokens.append(token)
+                return filtered_tokens
+            
+            # Improved TF-IDF with custom stop words
             vectorizer = TfidfVectorizer(
-                stop_words="english",
-                max_features=1000,
-                ngram_range=(1, 2),
-                min_df=2,
-                max_df=0.9
+                stop_words='english',  # Start with English stop words
+                max_features=800,      # Reduced to get more meaningful terms
+                ngram_range=(1, 3),    # Include up to 3-word phrases
+                min_df=2,              # Term must appear in at least 2 documents
+                max_df=0.8,            # Filter out terms that appear in >80% of docs
+                tokenizer=custom_tokenizer
             )
             
             X = vectorizer.fit_transform(texts)
+            
+            # Check if we have enough features after filtering
+            if X.shape[1] < 10:  # Less than 10 unique terms
+                return {
+                    "success": False,
+                    "error": "Not enough meaningful terms after filtering generic words.",
+                    "topics_df": pd.DataFrame(),
+                    "paper_labels": [],
+                    "paper_titles": []
+                }
             
             # Cluster
             kmeans = KMeans(n_clusters=n_topics, random_state=42, n_init="auto")
@@ -112,17 +189,66 @@ class TopicService:
             
             # Extract topic keywords
             terms = vectorizer.get_feature_names_out()
-            topics = []
             
+            # Filter and rank keywords better
+            topics = []
             for topic_id in range(n_topics):
-                top_idx = kmeans.cluster_centers_[topic_id].argsort()[::-1][:10]
-                keywords = [terms[i] for i in top_idx]
+                # Get raw scores for this topic
+                scores = kmeans.cluster_centers_[topic_id]
+                
+                # Get indices sorted by score (descending)
+                top_indices = scores.argsort()[::-1]
+                
+                # Filter keywords
+                filtered_keywords = []
+                for idx in top_indices:
+                    keyword = terms[idx]
+                    score = scores[idx]
+                    
+                    # Skip if score is too low
+                    if score < 0.01:
+                        continue
+                    
+                    # Additional filtering
+                    # Skip terms that are too generic even after initial filtering
+                    words = keyword.split()
+                    if all(w in self.custom_stop_words or len(w) < 3 for w in words):
+                        continue
+                    
+                    # Check if keyword is a subphrase of already included keyword
+                    if any(keyword in k or k in keyword for k in filtered_keywords):
+                        continue
+                    
+                    filtered_keywords.append(keyword)
+                    
+                    # Stop when we have enough good keywords
+                    if len(filtered_keywords) >= 10:
+                        break
+                
+                # If we don't have enough keywords, add some from the original list
+                if len(filtered_keywords) < 5:
+                    for idx in top_indices:
+                        if terms[idx] not in filtered_keywords:
+                            filtered_keywords.append(terms[idx])
+                        if len(filtered_keywords) >= 5:
+                            break
+                
                 count = int((labels == topic_id).sum())
+                
+                # Give topic a descriptive name based on top keywords
+                if filtered_keywords:
+                    # Take first 2-3 keywords for a name
+                    name_keywords = filtered_keywords[:min(3, len(filtered_keywords))]
+                    topic_name = " & ".join(name_keywords)
+                else:
+                    topic_name = f"Topic {topic_id}"
                 
                 topics.append({
                     "topic_id": topic_id,
+                    "topic_name": topic_name,
                     "doc_count": count,
-                    "keywords": ", ".join(keywords),
+                    "keywords": ", ".join(filtered_keywords[:8]),  # Show only top 8
+                    "all_keywords": filtered_keywords
                 })
             
             topics_df = pd.DataFrame(topics).sort_values("doc_count", ascending=False)
@@ -173,52 +299,3 @@ def analyze_live_results(papers: List[Paper]) -> Dict[str, Any]:
     """Standalone function for backward compatibility"""
     service = TopicService()
     return service.analyze_live_results(papers)
-
-
-if __name__ == "__main__":
-    # Test the service
-    print("Testing TopicService...")
-    
-    # Create mock papers for testing
-    class MockPaper:
-        def __init__(self, title, abstract, authors="Author"):
-            self.id = f"test_{hash(title)}"
-            self.title = title
-            self.abstract = abstract
-            self.authors = authors
-            self.published = "2023-01-01"
-            self.pdf_url = "http://example.com"
-    
-    # Create test papers
-    test_papers = [
-        MockPaper(
-            "Machine Learning for Image Classification",
-            "This paper presents a new machine learning approach for image classification using convolutional neural networks."
-        ),
-        MockPaper(
-            "Deep Learning in Natural Language Processing",
-            "We explore deep learning techniques for natural language processing tasks including sentiment analysis and machine translation."
-        ),
-        MockPaper(
-            "Reinforcement Learning for Robotics",
-            "This research applies reinforcement learning algorithms to robotic control and navigation problems."
-        ),
-        MockPaper(
-            "Transformer Models in Computer Vision",
-            "We investigate the use of transformer architectures for computer vision tasks previously dominated by CNNs."
-        ),
-        MockPaper(
-            "Federated Learning for Privacy-Preserving ML",
-            "A survey of federated learning techniques that enable machine learning while preserving data privacy."
-        ),
-    ]
-    
-    service = TopicService()
-    result = service.analyze_live_results(test_papers)
-    
-    if result["success"]:
-        print(f"Success! Generated {result['num_topics']} topics")
-        print("\nTopics:")
-        print(result["topics_df"].to_string())
-    else:
-        print(f"Failed: {result['error']}")
