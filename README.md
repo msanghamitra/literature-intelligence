@@ -1,4 +1,4 @@
-# Literature Intelligence Engine
+# Paperminer - Literature Intelligence Solution
 
 AI-powered literature intelligence solution that automatically retrieves, summarizes, and organizes scientific papers (starting with arXiv), enabling research scientists to explore topics faster and ask natural-language questions over the corpus.
 
