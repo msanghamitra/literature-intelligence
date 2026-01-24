@@ -211,24 +211,13 @@ def render_topics_tab(services):
                 with col_left:
                     st.markdown("**🔑 Key Terms**")
                     
-                    # Display keywords as badges with better formatting
+                    # Display keywords as badges with DeepSeek blue - FIXED
                     badge_html = '<div style="margin-bottom: 10px;">'
                     for i, kw in enumerate(keywords[:10]):  # Show up to 10 keywords
-                        # Different colors for different keywords
-                        colors = ['#3B82F6', '#10B981', '#8B5CF6', '#EF4444', '#F59E0B']
+                        # Use DeepSeek blue variations
+                        colors = ['#4f9cf9', '#2d73da', '#1a5fb4', '#0d4a8c']
                         color = colors[i % len(colors)]
-                        badge_html += f'''
-                        <span style="
-                            background-color: {color};
-                            color: white;
-                            padding: 6px 12px;
-                            margin: 4px;
-                            border-radius: 20px;
-                            font-size: 0.9em;
-                            display: inline-block;
-                            font-weight: 500;
-                        ">{kw}</span>
-                        '''
+                        badge_html += f'''<span style="background-color: {color}; color: white; padding: 6px 12px; margin: 4px; border-radius: 20px; font-size: 0.9em; display: inline-block; font-weight: 500;">{kw}</span>'''
                     badge_html += '</div>'
                     st.markdown(badge_html, unsafe_allow_html=True)
                     
@@ -258,7 +247,7 @@ def render_topics_tab(services):
                                         st.caption(f"👥 {paper.authors[:50]}...")
                                 with col_b:
                                     if st.button("Select", key=f"select_{topic_id}_{paper.id}", 
-                                                help="Select for Q&A", type="secondary", size="small"):
+                                                help="Select for Q&A", type="secondary"):
                                         st.session_state.selected_paper_id = paper.id
                                         st.success(f"Selected '{paper.title[:50]}...'")
                                         st.rerun()
@@ -309,7 +298,14 @@ def render_topics_tab(services):
                 selected_topic_row = topics_df[topics_df['topic_id'] == selected_topic_id].iloc[0]
                 selected_keywords = selected_topic_row['keywords'].split(', ')
                 
-                st.markdown("**Key terms:** " + ", ".join([f"`{kw}`" for kw in selected_keywords[:5]]))
+                # FIXED: Show keywords properly without duplication
+                keyword_badges = ""
+                for i, kw in enumerate(selected_keywords[:5]):
+                    colors = ['#4f9cf9', '#2d73da', '#1a5fb4', '#0d4a8c']
+                    color = colors[i % len(colors)]
+                    keyword_badges += f'<span style="background-color: {color}; color: white; padding: 4px 8px; margin: 2px; border-radius: 15px; font-size: 0.85em; display: inline-block;">{kw}</span> '
+                
+                st.markdown(f"**Key terms:** <br>{keyword_badges}", unsafe_allow_html=True)
                 
                 # Show all papers in this topic
                 for paper in selected_papers:
@@ -442,61 +438,163 @@ def main():
     services = init_services()
     
     # ============================================
-    # ADD THIS PART - START (Browser Tab Settings)
+    # PAGE CONFIGURATION
     # ============================================
-    # Page configuration - FOR BROWSER TAB
     st.set_page_config(
         page_title="PAPERMINER - Research Paper Explorer",
         layout="wide",
-        page_icon="📚",  # This becomes the browser tab favicon
+        page_icon="🔍",
         initial_sidebar_state="expanded"
     )
 
-    # Custom CSS for the visible page header
+    # ============================================
+    # CUSTOM CSS - NO ORANGE, BLUE SLIDERS
+    # ============================================
     st.markdown("""
     <style>
+    /* Remove Streamlit default padding at top */
+    .stApp {
+        margin-top: -60px !important;
+        padding-top: 0 !important;
+    }
+    
+    /* Main header container - NO BACKGROUND */
     .paperminer-main {
         text-align: center;
-        margin: 2rem 0 3rem 0;
-        padding: 1rem;
+        margin: -25px 0 1rem 0;
+        padding: 0;
+        position: relative;
     }
+    
+    /* Main title - YELLOW ONLY (no orange shadow) */
     .paperminer-title {
-        font-size: 3.5rem;
+        font-size: 3.8rem;
         font-weight: 900;
-        color: #FFD700;  /* Bright yellow */
-        text-shadow: 2px 2px 0 #FF8C00, 4px 4px 0 rgba(0,0,0,0.15);
+        color: #FFD700 !important;
         letter-spacing: 1px;
-        margin-bottom: 0.5rem;
+        margin-bottom: 0.2rem;
+        padding-top: 5px;
     }
-    .paperminer-subtitle {
-        font-size: 1.3rem;
-        color: #4B5563;
-        font-weight: 400;
-        margin-top: 0;
-    }
+    
+    /* Divider with DeepSeek blue ONLY */
     .divider {
         height: 4px;
-        background: linear-gradient(90deg, #FFD700, #FF8C00, #FFD700);
-        width: 200px;
-        margin: 1rem auto;
-        border-radius: 2px;
+        background: #4f9cf9 !important;
+        width: 250px;
+        margin: 0.3rem auto 0.5rem auto;
+        border-radius: 4px;
+    }
+    
+    /* Subtitle - DeepSeek blue */
+    .paperminer-subtitle {
+        font-size: 1.3rem;
+        color: #2d73da !important;
+        font-weight: 500;
+        margin-top: 0.1rem;
+    }
+    
+    /* SLIDER STYLING - BLUE */
+    .stSlider > div > div > div {
+        background-color: #4f9cf9 !important;
+    }
+    
+    .stSlider > div > div > div > div {
+        background-color: #2d73da !important;
+        border-color: #2d73da !important;
+    }
+    
+    .stSlider label {
+        color: #1a5fb4 !important;
+        font-weight: 600 !important;
+    }
+    
+    /* Tab headers styling - blue */
+    .stTabs [data-baseweb="tab"] {
+        font-size: 1.1rem;
+        font-weight: 600;
+        padding: 12px 24px;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background-color: #4f9cf9 !important;
+        color: white !important;
+        border-radius: 8px 8px 0 0;
+    }
+    
+    /* Headers in each tab - blue */
+    h1, h2, h3 {
+        color: #1a5fb4 !important;
+    }
+    
+    /* Primary buttons - DeepSeek blue */
+    .stButton > button {
+        background-color: #4f9cf9 !important;
+        color: white !important;
+        border: none !important;
+    }
+    
+    .stButton > button:hover {
+        background-color: #2d73da !important;
+        color: white !important;
+        border: none !important;
+    }
+    
+    /* Sidebar headers - blue */
+    .sidebar .stMarkdown h3 {
+        color: #1a5fb4 !important;
+    }
+    
+    /* Ensure space at bottom of page */
+    .main .block-container {
+        padding-bottom: 4rem !important;
+    }
+    
+    /* Footer space */
+    .footer-spacer {
+        height: 80px;
+        width: 100%;
+    }
+    
+    /* Metrics styling - blue */
+    [data-testid="stMetric"] {
+        background-color: #f0f7ff;
+        padding: 15px;
+        border-radius: 10px;
+        border-left: 4px solid #4f9cf9;
+    }
+    
+    /* Expanders - blue */
+    .streamlit-expanderHeader {
+        background-color: #f0f7ff;
+        border-left: 4px solid #4f9cf9;
+    }
+    
+    /* Remove any orange text */
+    * {
+        color: #1a5fb4 !important;
+    }
+    
+    /* Sidebar styling */
+    .css-1d391kg, .css-12oz5g7 {
+        background-color: #f8fafc !important;
     }
     </style>
     """, unsafe_allow_html=True)
 
-    # Visible header on the page - NOT in browser tab
+    # ============================================
+    # VISIBLE PAGE HEADER - YELLOW TITLE ONLY
+    # ============================================
     st.markdown("""
     <div class="paperminer-main">
         <h1 class="paperminer-title">📚 PAPERMINER</h1>
         <div class="divider"></div>
-        <p class="paperminer-subtitle">Your AI-powered research paper explorer</p>
+        <p class="paperminer-subtitle">Scientific Literature Intelligence</p>
     </div>
     """, unsafe_allow_html=True)
-    # ==========================================
-    # ADD THIS PART - END
-    # ==========================================
-    
-    # Sidebar settings
+
+    # ============================================
+    # SIDEBAR SETTINGS WITH BLUE SLIDERS
+    # ============================================
     st.sidebar.markdown("### ⚙️ Settings")
     
     st.sidebar.markdown("#### Search Settings")
@@ -526,14 +624,16 @@ def main():
         Built for researchers, students, and curious minds.
         """)
     
-    # Main tabs with icons
+    # ============================================
+    # MAIN TABS
+    # ============================================
     tab_summaries, tab_topics, tab_qa = st.tabs(["📄 Paper Summaries", "📊 Topic Insights", "❓ Paper Q&A"])
     
-    # -----------------------
-    # Summaries Tab
-    # -----------------------
+    # ============================================
+    # SUMMARIES TAB
+    # ============================================
     with tab_summaries:
-        st.markdown("### 📄 Search & Summarize Papers")
+        st.header("📄 Search & Summarize Papers")
         st.markdown("Find arXiv papers and generate AI-powered summaries.")
         
         # Render search controls
@@ -574,17 +674,22 @@ def main():
         else:
             st.info("🔍 Enter a research topic above to search for papers.")
     
-    # -----------------------
-    # Topics Tab
-    # -----------------------
+    # ============================================
+    # TOPICS TAB
+    # ============================================
     with tab_topics:
         render_topics_tab(services)
     
-    # -----------------------
-    # Q&A Tab
-    # -----------------------
+    # ============================================
+    # Q&A TAB
+    # ============================================
     with tab_qa:
         render_qa_tab(services)
+    
+    # ============================================
+    # FOOTER SPACER
+    # ============================================
+    st.markdown('<div class="footer-spacer"></div>', unsafe_allow_html=True)
 
 
 if __name__ == "__main__":
