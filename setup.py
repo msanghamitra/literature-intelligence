@@ -1,0 +1,30 @@
+from setuptools import setup, find_packages
+
+setup(
+    name="scientific-rag",
+    version="0.1.0",
+    description="Scientific Paper RAG System with advanced ranking and evaluation",
+    author="Your Name",
+    packages=find_packages(),
+    install_requires=[
+        "arxiv",
+        "openai",
+        "langchain",
+        "faiss-cpu",
+        "sentence-transformers",
+        "pymupdf",
+        "numpy",
+        "pandas",
+        "scikit-learn",
+        "matplotlib",
+        "seaborn",
+        "pyyaml",
+        "tqdm",
+        "rouge-score",
+        "nltk",
+        "networkx",
+        "pytest",
+        "streamlit",
+    ],
+    python_requires=">=3.8",
+)

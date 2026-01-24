@@ -1,0 +1,7 @@
+sentence-transformers
+PyPDF2
+numpy
+langchain
+transformers
+torch
+dataclasses

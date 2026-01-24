@@ -1,7 +1,9 @@
+# src/app/streamlit_app.py
+"""
+MINIMAL UI LAYER - All business logic moved to services/
+"""
 from pathlib import Path
 import sys
-
-import pandas as pd
 import streamlit as st
 
 # --- Make sure the project root is on sys.path ---
@@ -9,347 +11,367 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.models.summarizer import (
-    load_summary_corpus,
-    summarize_text,
-    run_full_corpus_summarisation
-)
-
-from src.models.embeddings import (
-    run_full_corpus_embedding,
-    retrieve_top_k
-)
-
-# -------------------------------------------------
-# 1. Load and normalise the data for the UI
-# -------------------------------------------------
-@st.cache_data(show_spinner=False)
-def get_corpus() -> pd.DataFrame:
-    df = load_summary_corpus()
-
-    # Normalise title column
-    if "title" in df.columns:
-        df["__title"] = df["title"]
-    elif "title_clean" in df.columns:
-        df["__title"] = df["title_clean"]
-    else:
-        df["__title"] = "Untitled"
-
-    # ✅ Use ORIGINAL abstract for display (not the model summary)
-    if "abstract_clean" in df.columns:
-        df["__abstract"] = df["abstract_clean"]
-    elif "summary" in df.columns:
-        df["__abstract"] = df["summary"]
-    else:
-        df["__abstract"] = ""
-
-    # ✅ Keep model-generated summary separately
-    if "summary" in df.columns:
-        df["__summary"] = df["summary"]
-    else:
-        df["__summary"] = ""
-
-    # Ensure text_unit exists: title + abstract (original)
-    if "text_unit" not in df.columns:
-        df["text_unit"] = df["__title"].fillna("") + ". " + df["__abstract"].fillna("")
-
-    return df
+# Import SERVICES (business logic layer) instead of models directly
+from src.services.search_service import SearchService
+from src.services.topic_service import TopicService
+from src.services.summary_service import SummaryService
+from src.services.qa_service import QAService
 
 
-def get_semantic_df(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Align with embeddings.py:
-    - embeddings built over 'summary' if present, else 'text_unit'
-    - empty rows filtered, reset_index(drop=True)
-    """
-    if "summary" in df.columns and df["summary"].notna().any():
-        text_col = "summary"
-    else:
-        text_col = "text_unit"
-
-    texts = df[text_col].astype(str).fillna("")
-    mask = texts.str.strip().ne("")
-    df_use = df.loc[mask].reset_index(drop=True)
-    df_use["__embedded_text_col"] = text_col
-    return df_use
+# -----------------------
+# Service Initialization (singleton pattern)
+# -----------------------
+@st.cache_resource
+def init_services():
+    """Initialize all services once per session"""
+    return {
+        "search": SearchService(),
+        "topics": TopicService(),
+        "summary": SummaryService(),
+        "qa": QAService()
+    }
 
 
-# -------------------------------------------------
-# 2. Simple keyword search
-# -------------------------------------------------
-def search_corpus(df: pd.DataFrame, query: str, top_k: int = 10) -> pd.DataFrame:
-    if not query:
-        return df.head(top_k)
+# -----------------------
+# Session State
+# -----------------------
+def init_session_state():
+    """Initialize all session state variables"""
+    defaults = {
+        "search_results": None,      # List of Paper objects
+        "selected_paper_id": None,   # ID of selected paper
+        "current_query": "",         # Last search query
+        "search_mode": "keyword",    # Current search mode
+        "topic_data": None,          # Topic analysis results
+    }
+    
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
-    q = query.lower()
-    mask = (
-        df["__title"].astype(str).str.lower().str.contains(q)
-        | df["__abstract"].astype(str).str.lower().str.contains(q)
-        | df["__summary"].astype(str).str.lower().str.contains(q)
+
+# -----------------------
+# UI Components (pure display logic)
+# -----------------------
+def render_search_controls():
+    """Render search input and controls"""
+    st.markdown("### Search")
+    
+    search_mode = st.radio(
+        "Search mode",
+        ["Keyword (fast)", "Semantic (embeddings)"],
+        index=0,
+        horizontal=True
     )
-    return df[mask].head(top_k)
-
-
-# -------------------------------------------------
-# 3. App layout & sidebar
-# -------------------------------------------------
-st.set_page_config(page_title="Research Librarian", layout="wide")
-
-st.sidebar.title("Customise here")
-st.sidebar.markdown("Prototype UI - summarisation + embeddings + topics + Q&A")
-
-top_k = st.sidebar.slider("Number of results", 5, 50, 10, step=5)
-max_len = st.sidebar.slider("Max summary length", 64, 256, 128, step=16)
-min_len = st.sidebar.slider("Min summary length", 16, 64, 32, step=8)
-
-st.sidebar.markdown("---")
-if st.sidebar.button("🏃 Run full corpus summarisation (offline)"):
-    with st.spinner("Summarising entire corpus…"):
-        run_full_corpus_summarisation()
-    st.cache_data.clear()
-    st.sidebar.success("Done. Reloaded cached data.")
-
-st.sidebar.markdown("---")
-if st.sidebar.button("🧠 Build embeddings (semantic search)"):
-    with st.spinner("Building embeddings for corpus…"):
-        run_full_corpus_embedding()
-    st.cache_data.clear()
-    st.sidebar.success("Embeddings saved. Semantic search is ready.")
-
-# ✅ Topics build button (lazy import to avoid sklearn import at startup)
-st.sidebar.markdown("---")
-if st.sidebar.button("🧩 Build topics (offline)"):
-    try:
-        from src.models.topics import build_topics
-        with st.spinner("Building topics…"):
-            build_topics()
-        st.sidebar.success("Topics built. Open the Topics tab.")
-    except Exception as e:
-        st.sidebar.error(f"Topics failed: {e}")
-
-df = get_corpus()
-
-# -------------------------------------------------
-# Search mode moved to TOP (above tabs)
-# -------------------------------------------------
-st.markdown("### Search mode")
-search_mode = st.radio(
-    "Choose how to search the library",
-    ["Keyword (fast)", "Semantic (embeddings)"],
-    index=0,
-    horizontal=True
-)
-
-# Tabs
-tab_summaries, tab_topics, tab_qa = st.tabs(["Summaries", "Topics", "Q&A"])
-
-
-# -------------------------------------------------
-# 4. Summaries tab
-# -------------------------------------------------
-with tab_summaries:
-    st.header("Search papers & view summaries")
-
+    
     query = st.text_input(
-        "Search by keyword or meaning (semantic)",
-        placeholder="e.g. diffusion models, federated learning, GNNs…",
+        "Topic",
+        placeholder="e.g. machine learning, diffusion models, federated learning…",
+        label_visibility="collapsed"
     )
+    
+    arxiv_category = st.text_input(
+        "Optional arXiv category (e.g., cs.LG, cs.CL, stat.ML). Leave empty for broad search.",
+        value="",
+    )
+    
+    submitted = st.button("🔍 Search", type="primary")
+    
+    return {
+        "query": query,
+        "submitted": submitted,
+        "mode": "keyword" if search_mode.startswith("Keyword") else "semantic",
+        "category": arxiv_category if arxiv_category else None
+    }
 
-    if not query:
-        st.info("🔍 Enter a search query above to explore the corpus.")
-    else:
-        if search_mode == "Keyword (fast)":
-            results = search_corpus(df, query, top_k=top_k)
 
-            if results.empty:
-                st.warning("No papers found for this query.")
+def render_paper_card(paper, index, services, max_len, min_len):
+    """Render a single paper result card"""
+    title = paper.title
+    if hasattr(paper, 'similarity') and paper.similarity is not None:
+        title = f"{title}  (similarity: {paper.similarity:.3f})"
+    
+    with st.expander(title):
+        # Metadata
+        meta = f"**Authors:** {paper.authors}"
+        if paper.published:
+            meta += f"  |  **Published:** {paper.published}"
+        st.markdown(meta)
+        
+        # Links
+        links = []
+        if hasattr(paper, 'entry_id') and paper.entry_id:
+            links.append(f"[Open on arXiv]({paper.entry_id})")
+        if paper.pdf_url:
+            links.append(f"[Read paper (PDF)]({paper.pdf_url})")
+        if links:
+            st.markdown("  |  ".join(links))
+        
+        # Abstract
+        st.markdown("**Abstract (arXiv)**")
+        st.write(paper.abstract)
+        
+        # Actions
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("Select for Topic Insights / Q&A", key=f"sel_{paper.id}"):
+                st.session_state.selected_paper_id = paper.id
+                st.success("Selected. Go to Topic Insights or Q&A tab.")
+        with col2:
+            if st.button("Summarise now", key=f"sum_{paper.id}"):
+                with st.spinner("Generating summary…"):
+                    summary = services["summary"].summarize_paper(
+                        paper, 
+                        max_length=max_len, 
+                        min_length=min_len
+                    )
+                st.markdown("**Summary (generated)**")
+                st.write(summary)
+
+
+def render_topics_tab(services):
+    """Render topics analysis tab - PURE UI LOGIC"""
+    st.header("Topics (from current search results)")
+    
+    if not st.session_state.search_results:
+        st.info("Run a search in Summaries to generate topics.")
+        return
+    
+    papers = st.session_state.search_results
+    
+    # Check minimum papers requirement (UI logic only)
+    if len(papers) < 5:
+        st.info(f"Need at least 5 papers for topic modeling. Found {len(papers)}.")
+        
+        # Show simple paper list (UI only)
+        if len(papers) > 0:
+            st.subheader("Papers found:")
+            for i, paper in enumerate(papers):
+                st.write(f"{i+1}. **{paper.title}**")
+        return
+    
+    # Generate topics if not already done
+    if not st.session_state.topic_data:
+        with st.spinner("Analyzing topics…"):
+            # Call business logic service
+            topic_data = services["topics"].analyze_live_results(papers)
+            
+            if topic_data.get("success"):
+                st.session_state.topic_data = topic_data
+                st.success(f"Generated {topic_data.get('num_topics', 0)} topics!")
             else:
-                st.write(f"Showing up to **{len(results)}** papers.")
-                for idx, row in results.iterrows():
-                    title = row["__title"]
-                    authors = row.get("authors", "Unknown authors")
-                    published = row.get("published", "")
-                    pdf_url = row.get("pdf_url", "")
-
-                    with st.expander(title):
-                        meta = f"**Authors:** {authors}"
-                        if isinstance(published, str) and published:
-                            meta += f"  |  **Published:** {published}"
-                        st.markdown(meta)
-
-                        if isinstance(pdf_url, str) and pdf_url.strip():
-                            st.markdown(f"[Read paper (PDF)]({pdf_url})")
-
-                        st.markdown("**Abstract (original)**")
-                        st.write(row["__abstract"])
-
-                        precomputed = row.get("__summary", "")
-                        if isinstance(precomputed, str) and precomputed.strip():
-                            st.markdown("**Precomputed model summary (CSV)**")
-                            st.write(precomputed)
-
-                        if st.button("Summarise now", key=f"sum_kw_{idx}"):
-                            with st.spinner("Generating summary…"):
-                                text = row.get("text_unit", row["__abstract"])
-                                new_summary = summarize_text(
-                                    text,
-                                    max_length=max_len,
-                                    min_length=min_len,
-                                )
-
-                            if isinstance(precomputed, str) and precomputed.strip() and new_summary.strip() == precomputed.strip():
-                                st.info("This matches the precomputed summary (same content + similar settings).")
-                            else:
-                                st.markdown("**On-the-fly summary**")
-                                st.write(new_summary)
-
-        else:
-            try:
-                sem_results = retrieve_top_k(query, k=top_k)
-            except FileNotFoundError:
-                st.warning("Embeddings not found yet. Use the sidebar button **Build embeddings** first.")
-                sem_results = pd.DataFrame()
-
-            if sem_results.empty:
-                st.warning("No semantic results (or embeddings not built).")
-            else:
-                df_sem = get_semantic_df(df)
-                st.write(f"Showing top **{len(sem_results)}** semantic matches.")
-
-                for i, r in sem_results.iterrows():
-                    row_idx = int(r.get("row_idx", -1))
-                    sim = float(r.get("similarity", 0.0))
-
-                    if row_idx < 0 or row_idx >= len(df_sem):
-                        continue
-
-                    paper = df_sem.iloc[row_idx]
-                    title = paper["__title"]
-                    authors = paper.get("authors", "Unknown authors")
-                    published = paper.get("published", "")
-                    pdf_url = paper.get("pdf_url", "")
-
-                    with st.expander(f"{title}  (similarity: {sim:.3f})"):
-                        meta = f"**Authors:** {authors}"
-                        if isinstance(published, str) and published:
-                            meta += f"  |  **Published:** {published}"
-                        st.markdown(meta)
-
-                        if isinstance(pdf_url, str) and pdf_url.strip():
-                            st.markdown(f"[Read paper (PDF)]({pdf_url})")
-
-                        st.markdown("**Abstract (original)**")
-                        st.write(paper["__abstract"])
-
-                        precomputed = paper.get("__summary", "")
-                        if isinstance(precomputed, str) and precomputed.strip():
-                            st.markdown("**Precomputed model summary (CSV)**")
-                            st.write(precomputed)
-
-                        if st.button("Summarise now", key=f"sum_sem_{row_idx}_{i}"):
-                            with st.spinner("Generating summary…"):
-                                text = paper.get("text_unit", paper["__abstract"])
-                                new_summary = summarize_text(
-                                    text,
-                                    max_length=max_len,
-                                    min_length=min_len,
-                                )
-
-                            if isinstance(precomputed, str) and precomputed.strip() and new_summary.strip() == precomputed.strip():
-                                st.info("This matches the precomputed summary (same content + similar settings).")
-                            else:
-                                st.markdown("**On-the-fly summary**")
-                                st.write(new_summary)
-
-
-# -------------------------------------------------
-# 5. Topics tab (lazy import)
-# -------------------------------------------------
-with tab_topics:
-    st.header("Topics")
-
-    try:
-        from src.models.topics import build_topics, load_topics, load_corpus_with_topics
-    except Exception as e:
-        st.error(f"Could not load Topics module/dependencies: {e}")
-        st.stop()
-
-    st.write("Build topics once, then explore them here.")
-
-    if st.button("🧩 Build / Rebuild topics"):
-        with st.spinner("Building topics…"):
-            build_topics()
-        st.success("Topics built.")
-
-    try:
-        topics_df = load_topics()
-        corpus_topics_df = load_corpus_with_topics()
-    except FileNotFoundError:
-        st.warning("Topics not built yet. Click **Build / Rebuild topics**.")
-        topics_df = pd.DataFrame()
-        corpus_topics_df = pd.DataFrame()
-
-    if not topics_df.empty:
+                st.warning(topic_data.get("error", "Could not generate topics"))
+                st.session_state.topic_data = {"error": topic_data.get("error")}
+                return
+    
+    topic_data = st.session_state.topic_data
+    
+    # Check for errors (UI logic)
+    if "error" in topic_data:
+        st.warning(topic_data["error"])
+        return
+    
+    if not topic_data.get("success"):
+        st.info("Could not generate topics. Try a larger search.")
+        return
+    
+    # Display topics from service (UI only)
+    if "topics_df" in topic_data and not topic_data["topics_df"].empty:
+        topics_df = topic_data["topics_df"]
+        
         st.subheader("Topic list")
         st.dataframe(topics_df, width="stretch")
-
-        st.subheader("Browse papers by topic")
-        topic_ids = topics_df["topic_id"].tolist()
-        selected_topic = st.selectbox("Select a topic_id", topic_ids)
-
-        subset = corpus_topics_df[corpus_topics_df["topic_id"] == selected_topic].copy()
-        st.write(f"Papers in topic **{selected_topic}**: {len(subset)}")
-
-        show_cols = [c for c in ["title", "title_clean", "published", "pdf_url"] if c in subset.columns]
-        if show_cols:
-            st.dataframe(subset[show_cols].head(30), width="stretch")
-        else:
-            st.dataframe(subset.head(30), width="stretch")
-
-
-# -------------------------------------------------
-# 6. Q&A tab (lazy import)
-# -------------------------------------------------
-with tab_qa:
-    st.header("Paper Q&A (RAG)")
-    st.write("Retrieval (embeddings) + extractive QA over retrieved context.")
-
-    question = st.text_input("Ask a question", placeholder="e.g. What is graphene used for in these papers?")
-    k_ctx = st.slider("Number of papers to retrieve", 2, 10, 5)
-
-    if st.button("🤖 Answer"):
-        try:
-            from src.models.rag import answer_question
-        except Exception as e:
-            st.error(f"Could not load RAG module/dependencies: {e}")
-            st.stop()
-
-        try:
-            with st.spinner("Retrieving relevant papers + answering…"):
-                res = answer_question(question, k=k_ctx)
-        except FileNotFoundError:
-            st.warning("Embeddings not found. Build embeddings first in the sidebar.")
-            res = None
-
-        if res:
-            if res.get("error"):
-                st.warning(res["error"])
+        
+        # Topic selection UI
+        if "topic_id" in topics_df.columns:
+            topic_ids = topics_df["topic_id"].tolist()
+            topic_names = [f"Topic {tid} ({topics_df.loc[topics_df['topic_id'] == tid, 'doc_count'].iloc[0]} papers)" 
+                          for tid in topic_ids]
+            
+            selected_topic_name = st.selectbox("Browse papers by topic", topic_names)
+            
+            # Extract topic ID from selection
+            selected_topic_id = topic_ids[topic_names.index(selected_topic_name)]
+            
+            # Get papers in selected topic using service
+            papers_in_topic = services["topics"].get_papers_in_topic(
+                selected_topic_id, 
+                papers, 
+                topic_data
+            )
+            
+            if papers_in_topic:
+                st.write(f"**Papers in {selected_topic_name}:**")
+                
+                # Paper selection within topic (UI only)
+                paper_titles = [p.title for p in papers_in_topic]
+                chosen_title = st.selectbox("Select a paper", paper_titles, key="topic_paper_select")
+                
+                if chosen_title:
+                    chosen_paper = next(p for p in papers_in_topic if p.title == chosen_title)
+                    if st.button("Use this paper for Q&A", key="use_for_qa"):
+                        st.session_state.selected_paper_id = chosen_paper.id
+                        st.success("Selected. Go to the Q&A tab.")
+                        
+                    # Show paper details
+                    with st.expander("Paper details"):
+                        st.write(f"**Title:** {chosen_paper.title}")
+                        st.write(f"**Authors:** {chosen_paper.authors}")
+                        st.write(f"**Abstract:** {chosen_paper.abstract[:300]}...")
             else:
-                st.subheader("Answer")
-                st.write(res["answer"])
-                st.caption(f"Confidence score: {res.get('score', 0.0):.3f}")
+                st.info("No papers found in this topic.")
+    else:
+        st.info("No topics generated. Try a different search.")
 
-                st.subheader("Sources")
-                sources = res.get("sources")
-                if isinstance(sources, pd.DataFrame) and not sources.empty:
-                    for _, srow in sources.iterrows():
-                        title = srow.get("title", "Untitled")
-                        sim = float(srow.get("similarity", 0.0))
-                        pdf_url = srow.get("pdf_url", "")
 
-                        st.markdown(f"- **{title}** (similarity: {sim:.3f})")
-                        if isinstance(pdf_url, str) and pdf_url.strip():
-                            st.markdown(f"  - [Read paper (PDF)]({pdf_url})")
+def render_qa_tab(services):
+    """Render Q&A tab"""
+    st.header("Q&A (from full paper PDF)")
+    
+    if not st.session_state.search_results:
+        st.info("Run a search first in Summaries.")
+        return
+    
+    if not st.session_state.selected_paper_id:
+        st.info("Select a paper in Summaries or Topics tab to ask questions about it.")
+        return
+    
+    # Find selected paper
+    selected_paper = None
+    for paper in st.session_state.search_results:
+        if paper.id == st.session_state.selected_paper_id:
+            selected_paper = paper
+            break
+    
+    if not selected_paper:
+        st.warning("Selected paper not found in current results. Please search again and re-select.")
+        return
+    
+    # Display paper info
+    st.subheader(selected_paper.title)
+    if selected_paper.authors:
+        st.caption(selected_paper.authors)
+    
+    if hasattr(selected_paper, 'entry_id') and selected_paper.entry_id:
+        st.markdown(f"[Open on arXiv]({selected_paper.entry_id})")
+    if selected_paper.pdf_url:
+        st.markdown(f"[Read paper (PDF)]({selected_paper.pdf_url})")
+    
+    if not selected_paper.pdf_url or not str(selected_paper.pdf_url).strip():
+        st.error("No PDF URL available for this paper.")
+        return
+    
+    # Q&A interface
+    question = st.text_input("Ask a question about this paper (full PDF)")
+    
+    if st.button("🤖 Answer"):
+        if not question or not question.strip():
+            st.warning("Please enter a question.")
+        else:
+            with st.spinner("Retrieving relevant sections + answering…"):
+                answer = services["qa"].answer_question(selected_paper, question)
+            
+            if answer.get("error"):
+                st.warning(answer["error"])
+            else:
+                st.markdown("### Answer")
+                st.write(answer.get("answer", ""))
+                
+                # Show metrics
+                if "score" in answer:
+                    st.caption(f"QA confidence: {answer['score']:.3f}")
+                if "similarity" in answer:
+                    st.caption(f"Best chunk similarity: {answer['similarity']:.3f}")
+                if "page" in answer:
+                    st.caption(f"Page: {answer['page']}")
+                
+                # Show context if available
+                if answer.get("context_snippet"):
+                    with st.expander("Context snippet (from PDF)"):
+                        st.write(answer["context_snippet"])
+                
+                # Debug info
+                if answer.get("chunks_used"):
+                    with st.expander("Chunks used (debug)"):
+                        st.json(answer["chunks_used"])
 
-                with st.expander("Context preview (debug)"):
-                    st.write(res.get("context_preview", ""))
+
+# -----------------------
+# Main App
+# -----------------------
+def main():
+    """Main application entry point"""
+    # Initialize
+    init_session_state()
+    services = init_services()
+    
+    # Page configuration
+    st.set_page_config(
+        page_title="Research Librarian",
+        layout="wide",
+        page_icon="📚"
+    )
+    
+    # Sidebar settings
+    st.sidebar.title("Settings")
+    top_k = st.sidebar.slider("Number of results", 5, 50, 10, step=5)
+    max_len = st.sidebar.slider("Max summary length", 64, 256, 128, step=16)
+    min_len = st.sidebar.slider("Min summary length", 16, 64, 32, step=8)
+    
+    # Main tabs
+    tab_summaries, tab_topics, tab_qa = st.tabs(["Summaries", "Topic Insights", "Q&A"])
+    
+    # -----------------------
+    # Summaries Tab
+    # -----------------------
+    with tab_summaries:
+        st.header("Search papers & view summaries")
+        
+        # Render search controls
+        search_inputs = render_search_controls()
+        
+        # Execute search if requested
+        if search_inputs["submitted"] and search_inputs["query"]:
+            with st.spinner("Searching arXiv…"):
+                results = services["search"].search_arxiv(
+                    topic=search_inputs["query"].strip(),
+                    mode=search_inputs["mode"],
+                    top_k=top_k,
+                    category=search_inputs["category"]
+                )
+                
+                if results:
+                    st.session_state.search_results = results
+                    st.session_state.current_query = search_inputs["query"]
+                    st.session_state.search_mode = search_inputs["mode"]
+                    st.session_state.selected_paper_id = None  # Reset selection
+                    st.session_state.topic_data = None  # Reset topics
+                    
+                    st.success(f"Found {len(results)} papers")
+                else:
+                    st.info("No papers found for this query.")
+        
+        # Display results
+        if st.session_state.search_results:
+            st.write(f"Showing **{len(st.session_state.search_results)}** papers.")
+            
+            for idx, paper in enumerate(st.session_state.search_results):
+                render_paper_card(paper, idx, services, max_len, min_len)
+        else:
+            st.info("Search for a topic to see results.")
+    
+    # -----------------------
+    # Topics Tab
+    # -----------------------
+    with tab_topics:
+        render_topics_tab(services)
+    
+    # -----------------------
+    # Q&A Tab
+    # -----------------------
+    with tab_qa:
+        render_qa_tab(services)
+
+
+if __name__ == "__main__":
+    main()

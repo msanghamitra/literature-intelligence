@@ -1,0 +1,25 @@
+# Embedding Configuration
+default_model: "sentence-transformers/all-MiniLM-L6-v2"
+fallback_model: "all-MiniLM-L6-v2"
+
+models:
+  sentence-transformers/all-MiniLM-L6-v2:
+    dimension: 384
+    max_seq_length: 256
+    pooling: "mean"
+    
+  BAAI/bge-small-en-v1.5:
+    dimension: 384
+    max_seq_length: 512
+    pooling: "cls"
+
+  BAAI/bge-base-en-v1.5:
+    dimension: 768
+    max_seq_length: 512
+    pooling: "cls"
+
+chunking:
+  method: "semantic"
+  chunk_size: 500
+  chunk_overlap: 50
+  separators: ["\n\n", "\n", ".", " "]

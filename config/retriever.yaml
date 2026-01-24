@@ -1,0 +1,23 @@
+# Retriever Configuration
+default_mode: "hybrid"  # hybrid, semantic, or keyword
+
+hybrid:
+  weights:
+    semantic: 0.6
+    keyword: 0.4
+  fusion_method: "weighted_sum"  # weighted_sum, reciprocal_rank_fusion
+
+semantic:
+  model: "sentence-transformers/all-MiniLM-L6-v2"
+  top_k: 50
+  similarity_threshold: 0.7
+
+keyword:
+  max_results: 100
+  sort_by: "relevance"  # relevance, lastUpdatedDate, submittedDate
+  sort_order: "descending"
+
+reranking:
+  enable: true
+  model: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+  top_k: 10
