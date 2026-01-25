@@ -55,14 +55,29 @@ def init_session_state():
 # -----------------------
 def render_search_controls():
     """Render search input and controls"""
-    st.markdown("### 🔍 Search Papers")
+
+    # Search mode with bigger label
+    st.markdown("""
+    <div style="margin-bottom: 0.3rem; font-weight: 600; font-size: 1.1rem; color: #e5679a;">
+    Search mode
+    </div>
+    """, unsafe_allow_html=True)
     
     search_mode = st.radio(
         "Search mode",
         ["Keyword (fast)", "Semantic (embeddings)"],
         index=0,
-        horizontal=True
+        horizontal=True,
+        label_visibility="collapsed",
+        key="search_mode_radio"
     )
+    
+    # Semantic search explanation - ALWAYS VISIBLE
+    st.markdown("""
+    <div style='background-color: #2a1a3a; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #e5679a; margin: 8px 0 12px 0; font-size: 0.9em; color: #f0e6f6;'>
+    <strong style="color: #e5679a;">Semantic search</strong> finds papers based on meaning using embeddings. Better for complex topics.
+    </div>
+    """, unsafe_allow_html=True)
     
     query = st.text_input(
         "Research topic",
@@ -75,7 +90,16 @@ def render_search_controls():
         value="",
     )
     
-    submitted = st.button("Search arXiv", type="primary", use_container_width=True)
+    # Compact button
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.empty()  # Spacer
+    with col2:
+        submitted = st.button("Search arXiv", type="primary")
+    
+    # Placeholder message goes HERE (below search mode)
+    if not query:
+        st.info("🔍 Enter a research topic above to search for papers.")
     
     return {
         "query": query,
@@ -183,9 +207,6 @@ def render_topics_tab(services):
     if "topics_df" in topic_data and not topic_data["topics_df"].empty:
         topics_df = topic_data["topics_df"]
         
-        # Clearer topic display
-        st.subheader(f"📊 Found {len(topics_df)} Topics")
-        
         # Summary statistics
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -193,73 +214,16 @@ def render_topics_tab(services):
         with col2:
             st.metric("Total Papers", len(papers))
         with col3:
-            avg_papers = topics_df['doc_count'].mean()
-            st.metric("Avg Papers/Topic", f"{avg_papers:.1f}")
+            # Show topic names instead of average
+            topic_names = topics_df['topic_name'].head(3).tolist()
+            st.markdown("**📑 Topics Found:**")
+            for i, name in enumerate(topic_names, 1):
+                st.caption(f"{i}. {name}")
+            if len(topics_df) > 3:
+                st.caption(f"... and {len(topics_df) - 3} more")
         
-        # Display each topic in a clear, visual way
-        for idx, row in topics_df.iterrows():
-            topic_id = row['topic_id']
-            topic_name = row.get('topic_name', f"Topic {topic_id}")
-            doc_count = row['doc_count']
-            keywords = row['keywords'].split(', ')
-            
-            # Create an expandable card for each topic
-            with st.expander(f"**{topic_name}** — {doc_count} paper{'s' if doc_count != 1 else ''}", expanded=idx==0):
-                # Two columns: keywords on left, papers on right
-                col_left, col_right = st.columns([1, 2])
-                
-                with col_left:
-                    st.markdown("**🔑 Key Terms**")
-                    
-                    # Display keywords as badges with DeepSeek blue - FIXED
-                    badge_html = '<div style="margin-bottom: 10px;">'
-                    for i, kw in enumerate(keywords[:10]):  # Show up to 10 keywords
-                        # Use DeepSeek blue variations
-                        colors = ['#4f9cf9', '#2d73da', '#1a5fb4', '#0d4a8c']
-                        color = colors[i % len(colors)]
-                        badge_html += f'''<span style="background-color: {color}; color: white; padding: 6px 12px; margin: 4px; border-radius: 20px; font-size: 0.9em; display: inline-block; font-weight: 500;">{kw}</span>'''
-                    badge_html += '</div>'
-                    st.markdown(badge_html, unsafe_allow_html=True)
-                    
-                    # Topic stats
-                    st.markdown(f"**📈 Coverage:** {doc_count} papers ({doc_count/len(papers)*100:.1f}% of total)")
-                
-                with col_right:
-                    st.markdown("**📚 Papers in this topic**")
-                    
-                    # Get papers in this topic
-                    papers_in_topic = services["topics"].get_papers_in_topic(
-                        topic_id, 
-                        papers, 
-                        topic_data
-                    )
-                    
-                    if papers_in_topic:
-                        # Display papers in a clean list
-                        for i, paper in enumerate(papers_in_topic[:5]):  # Show up to 5 papers
-                            with st.container(border=True):
-                                st.markdown(f"**{i+1}. {paper.title}**")
-                                
-                                # Quick metadata
-                                col_a, col_b = st.columns([3, 1])
-                                with col_a:
-                                    if hasattr(paper, 'authors'):
-                                        st.caption(f"👥 {paper.authors[:50]}...")
-                                with col_b:
-                                    if st.button("Select", key=f"select_{topic_id}_{paper.id}", 
-                                                help="Select for Q&A", type="secondary"):
-                                        st.session_state.selected_paper_id = paper.id
-                                        st.success(f"Selected '{paper.title[:50]}...'")
-                                        st.rerun()
-                        
-                        if len(papers_in_topic) > 5:
-                            st.caption(f"... and {len(papers_in_topic) - 5} more papers")
-                    else:
-                        st.info("No papers found in this topic")
-        
-        # Topic selection for detailed view
         st.markdown("---")
-        st.subheader("🔬 Explore a Specific Topic")
+        st.subheader("🔬 Explore Topics")
         
         # Create a dropdown with better topic names
         topic_options = []
@@ -298,12 +262,12 @@ def render_topics_tab(services):
                 selected_topic_row = topics_df[topics_df['topic_id'] == selected_topic_id].iloc[0]
                 selected_keywords = selected_topic_row['keywords'].split(', ')
                 
-                # FIXED: Show keywords properly without duplication
+                # Show keywords properly without duplication
                 keyword_badges = ""
                 for i, kw in enumerate(selected_keywords[:5]):
-                    colors = ['#4f9cf9', '#2d73da', '#1a5fb4', '#0d4a8c']
-                    color = colors[i % len(colors)]
-                    keyword_badges += f'<span style="background-color: {color}; color: white; padding: 4px 8px; margin: 2px; border-radius: 15px; font-size: 0.85em; display: inline-block;">{kw}</span> '
+                    colors = ['#e5679a', '#da3f59', '#73378a', '#5c038c', '#e5679a']
+                    color = colors[min(i, len(colors)-1)]
+                    keyword_badges += f'<span style="background-color: {color}; color: white; padding: 6px 12px; margin: 3px; border-radius: 20px; font-size: 0.88em; display: inline-block; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">{kw}</span> '
                 
                 st.markdown(f"**Key terms:** <br>{keyword_badges}", unsafe_allow_html=True)
                 
@@ -448,162 +412,344 @@ def main():
     )
 
     # ============================================
-    # CUSTOM CSS - NO ORANGE, BLUE SLIDERS
+    # CUSTOM CSS - VIBRANT NIGHT MODE PALETTE
     # ============================================
     st.markdown("""
     <style>
-    /* Remove Streamlit default padding at top */
+    /* FORCE OVERRIDE - Streamlit's primary color */
+    :root {
+        --primary-color: #e5679a !important;
+        --background-color: #0f0a1a !important;
+        --secondary-background-color: #1a1225 !important;
+    }
+    
+    /* Dark theme background */
     .stApp {
+        background-color: #0f0a1a !important;
         margin-top: -60px !important;
         padding-top: 0 !important;
     }
     
-    /* Main header container - NO BACKGROUND */
+    /* Main content area */
+    .main .block-container {
+        background-color: #0f0a1a !important;
+        padding-top: 2rem !important;
+    }
+    
+    /* Main header container */
     .paperminer-main {
         text-align: center;
-        margin: -25px 0 1rem 0;
-        padding: 0;
+        margin: -35px 0 0.5rem 0 !important;
+        padding: 20px;
+        background: linear-gradient(135deg, #1a1225 0%, #0f0a1a 100%);
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(229, 103, 154, 0.2);
         position: relative;
     }
     
-    /* Main title - YELLOW ONLY (no orange shadow) */
+    /* Main title - Hot Pink gradient */
     .paperminer-title {
         font-size: 3.8rem;
         font-weight: 900;
-        color: #FFD700 !important;
-        letter-spacing: 1px;
-        margin-bottom: 0.2rem;
+        background: linear-gradient(135deg, #e5679a 0%, #da3f59 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        letter-spacing: 2px;
+        margin-bottom: 0 !important;
         padding-top: 5px;
+        line-height: 1.1;
+        text-shadow: 0 0 30px rgba(229, 103, 154, 0.3);
     }
     
-    /* Divider with DeepSeek blue ONLY */
+    /* Divider - Vibrant gradient */
     .divider {
         height: 4px;
-        background: #4f9cf9 !important;
-        width: 250px;
-        margin: 0.3rem auto 0.5rem auto;
+        background: linear-gradient(90deg, #5c038c, #73378a, #da3f59, #e5679a) !important;
+        width: 320px;
+        margin: 0.3rem auto 0.4rem auto !important;
         border-radius: 4px;
+        box-shadow: 0 2px 8px rgba(229, 103, 154, 0.4);
     }
     
-    /* Subtitle - DeepSeek blue */
+    /* Subtitle - Hot Pink */
     .paperminer-subtitle {
         font-size: 1.3rem;
-        color: #2d73da !important;
+        color: #e5679a !important;
         font-weight: 500;
-        margin-top: 0.1rem;
+        margin-top: 0 !important;
+        opacity: 0.95;
+        text-shadow: 0 0 10px rgba(229, 103, 154, 0.3);
     }
     
-    /* SLIDER STYLING - BLUE */
-    .stSlider > div > div > div {
-        background-color: #4f9cf9 !important;
-    }
-    
-    .stSlider > div > div > div > div {
-        background-color: #2d73da !important;
-        border-color: #2d73da !important;
-    }
-    
-    .stSlider label {
-        color: #1a5fb4 !important;
-        font-weight: 600 !important;
-    }
-    
-    /* Tab headers styling - blue */
+    /* TABS - Vibrant gradient effect */
     .stTabs [data-baseweb="tab"] {
         font-size: 1.1rem;
         font-weight: 600;
-        padding: 12px 24px;
+        padding: 14px 28px;
+        margin: 0 4px;
+        border-radius: 10px 10px 0 0;
+        transition: all 0.3s ease;
+        border: 2px solid transparent;
     }
     
+    /* Tab 1 - Violet */
+    .stTabs [data-baseweb="tab"]:first-child:not([aria-selected="true"]) {
+        background: linear-gradient(135deg, #5c038c, #73378a) !important;
+        color: white !important;
+        border-bottom: none;
+    }
+    
+    .stTabs [data-baseweb="tab"]:first-child:not([aria-selected="true"]):hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(92, 3, 140, 0.5);
+    }
+    
+    /* Tab 2 - Indigo to Red gradient */
+    .stTabs [data-baseweb="tab"]:nth-child(2):not([aria-selected="true"]) {
+        background: linear-gradient(135deg, #73378a, #da3f59) !important;
+        color: white !important;
+        border-bottom: none;
+    }
+    
+    .stTabs [data-baseweb="tab"]:nth-child(2):not([aria-selected="true"]):hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(115, 55, 138, 0.5);
+    }
+    
+    /* Tab 3 - Red to Pink gradient */
+    .stTabs [data-baseweb="tab"]:nth-child(3):not([aria-selected="true"]) {
+        background: linear-gradient(135deg, #da3f59, #e5679a) !important;
+        color: white !important;
+        border-bottom: none;
+    }
+    
+    .stTabs [data-baseweb="tab"]:nth-child(3):not([aria-selected="true"]):hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(218, 63, 89, 0.5);
+    }
+    
+    /* Selected tab - Hot Pink with glow */
     .stTabs [aria-selected="true"] {
-        background-color: #4f9cf9 !important;
+        background: linear-gradient(135deg, #e5679a, #da3f59) !important;
         color: white !important;
-        border-radius: 8px 8px 0 0;
+        font-weight: 700;
+        border: 2px solid #e5679a;
+        border-bottom: none;
+        box-shadow: 0 0 20px rgba(229, 103, 154, 0.6), 0 4px 12px rgba(0,0,0,0.3);
+        transform: translateY(-3px);
     }
     
-    /* Headers in each tab - blue */
-    h1, h2, h3 {
-        color: #1a5fb4 !important;
+    /* Tab content headers - Hot Pink with glow */
+    h1, h2, h3, h4 {
+        color: #e5679a !important;
+        margin-top: 0.4rem !important;
+        margin-bottom: 0.4rem !important;
+        text-shadow: 0 0 10px rgba(229, 103, 154, 0.3);
     }
     
-    /* Primary buttons - DeepSeek blue */
-    .stButton > button {
-        background-color: #4f9cf9 !important;
+    /* ========== RADIO BUTTON - Hot Pink ========== */
+    [data-testid="stRadio"] [role="radiogroup"] [role="radio"] > div,
+    [data-testid="stRadio"] [role="radiogroup"] [role="radio"] > div > div,
+    div[data-baseweb="radio"] > div,
+    div[data-baseweb="radio"] > div > div {
+        border-color: #73378a !important;
+    }
+    
+    /* Checked radio - Hot Pink with glow */
+    [data-testid="stRadio"] [role="radiogroup"] [role="radio"][aria-checked="true"] > div > div,
+    div[data-baseweb="radio"] input:checked ~ div,
+    div[data-baseweb="radio"] input:checked ~ div > div,
+    div[data-baseweb="radio"] input:checked + div,
+    div[data-baseweb="radio"] input:checked + div > div,
+    div[data-baseweb="radio"] input:checked + div > div > div {
+        background-color: #e5679a !important;
+        border-color: #e5679a !important;
+        box-shadow: 0 0 10px rgba(229, 103, 154, 0.6);
+    }
+    
+    /* Radio labels */
+    .stRadio label,
+    [data-testid="stRadio"] label {
+        color: #e5679a !important;
+        font-weight: 500;
+    }
+    
+    /* ========== BUTTONS - Vibrant gradients ========== */
+    button[kind="primary"],
+    button[data-testid="baseButton-primary"],
+    .stButton > button,
+    .stDownloadButton > button,
+    div[data-testid="stButton"] > button {
+        background: linear-gradient(135deg, #e5679a, #da3f59) !important;
         color: white !important;
         border: none !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        padding: 10px 24px !important;
+        transition: all 0.3s ease !important;
+        box-shadow: 0 4px 12px rgba(229, 103, 154, 0.4);
     }
     
+    button[kind="primary"]:hover,
     .stButton > button:hover {
-        background-color: #2d73da !important;
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(229, 103, 154, 0.6);
+    }
+    
+    /* Secondary buttons - Violet gradient */
+    button[kind="secondary"],
+    button[data-testid="baseButton-secondary"] {
+        background: linear-gradient(135deg, #5c038c, #73378a) !important;
         color: white !important;
         border: none !important;
+        box-shadow: 0 4px 12px rgba(92, 3, 140, 0.4);
     }
     
-    /* Sidebar headers - blue */
-    .sidebar .stMarkdown h3 {
-        color: #1a5fb4 !important;
+    button[kind="secondary"]:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(92, 3, 140, 0.6);
     }
     
-    /* Ensure space at bottom of page */
-    .main .block-container {
-        padding-bottom: 4rem !important;
+    /* Sidebar - Dark theme */
+    [data-testid="stSidebar"] {
+        background-color: #1a1225 !important;
     }
     
-    /* Footer space */
-    .footer-spacer {
-        height: 80px;
-        width: 100%;
+    /* Sidebar headers - Hot Pink */
+    .sidebar .stMarkdown h3,
+    [data-testid="stSidebar"] h3 {
+        color: #e5679a !important;
+        border-bottom: 2px solid #e5679a;
+        padding-bottom: 0.6rem;
+        margin-bottom: 1rem;
+        text-shadow: 0 0 10px rgba(229, 103, 154, 0.3);
     }
     
-    /* Metrics styling - blue */
-    [data-testid="stMetric"] {
-        background-color: #f0f7ff;
-        padding: 15px;
-        border-radius: 10px;
-        border-left: 4px solid #4f9cf9;
+    .sidebar .stMarkdown h4,
+    [data-testid="stSidebar"] h4 {
+        color: #e5679a !important;
+        font-weight: 600;
     }
     
-    /* Expanders - blue */
+    /* Slider labels - Hot Pink */
+    .stSlider label {
+        color: #e5679a !important;
+        font-weight: 600 !important;
+    }
+    
+    /* Slider track - Dark with violet tint */
+    .stSlider > div > div > div[role="slider"],
+    .stSlider [role="slider"] {
+        background-color: #2a1a3a !important;
+    }
+    
+    /* Slider handle - Hot Pink with glow */
+    .stSlider > div > div > div > div,
+    .stSlider [data-baseweb="slider"] [role="slider"] > div {
+        background-color: #e5679a !important;
+        border-color: #e5679a !important;
+        box-shadow: 0 0 10px rgba(229, 103, 154, 0.6);
+    }
+    
+    /* Checkbox - Hot Pink */
+    .stCheckbox [data-baseweb="checkbox"] div:first-child,
+    [data-testid="stCheckbox"] [role="checkbox"] {
+        border-color: #e5679a !important;
+    }
+    
+    .stCheckbox input:checked + div > div:first-child,
+    [data-testid="stCheckbox"] input:checked ~ div {
+        background-color: #e5679a !important;
+        border-color: #e5679a !important;
+        box-shadow: 0 0 8px rgba(229, 103, 154, 0.5);
+    }
+    
+    /* Expander headers */
+    .sidebar .streamlit-expanderHeader,
     .streamlit-expanderHeader {
-        background-color: #f0f7ff;
-        border-left: 4px solid #4f9cf9;
+        color: #e5679a !important;
+        font-weight: 700 !important;
+        background-color: #2a1a3a !important;
+        border-radius: 6px;
     }
     
-    /* Remove any orange text */
+    /* Text colors for dark mode */
     * {
-        color: #1a5fb4 !important;
+        color: #f0e6f6 !important;
     }
     
-    /* Sidebar styling */
-    .css-1d391kg, .css-12oz5g7 {
-        background-color: #f8fafc !important;
+    /* Input fields - Dark theme */
+    .stTextInput > div > div > input,
+    .stTextArea > div > div > textarea,
+    .stSelectbox > div > div > select {
+        background-color: #2a1a3a !important;
+        color: #f0e6f6 !important;
+        border: 1px solid #73378a !important;
+        border-radius: 6px;
+    }
+    
+    .stTextInput > div > div > input:focus,
+    .stTextArea > div > div > textarea:focus {
+        border-color: #e5679a !important;
+        box-shadow: 0 0 10px rgba(229, 103, 154, 0.3);
+    }
+    
+    /* Containers and cards */
+    .element-container,
+    [data-testid="stExpander"],
+    [data-testid="stVerticalBlock"] {
+        background-color: transparent !important;
+    }
+    
+    /* Metrics */
+    [data-testid="stMetricValue"] {
+        color: #e5679a !important;
+        font-weight: 700;
+    }
+    
+    [data-testid="stMetricLabel"] {
+        color: #d4b3e0 !important;
+    }
+    
+    /* Info, warning, success boxes */
+    .stAlert {
+        background-color: #2a1a3a !important;
+        border-left-color: #e5679a !important;
+        color: #f0e6f6 !important;
+    }
+    
+    /* Expander content */
+    .streamlit-expanderContent {
+        background-color: #1a1225 !important;
+        border: 1px solid #73378a;
+        border-radius: 0 0 8px 8px;
     }
     </style>
     """, unsafe_allow_html=True)
 
     # ============================================
-    # VISIBLE PAGE HEADER - YELLOW TITLE ONLY
+    # PAGE HEADER
     # ============================================
     st.markdown("""
     <div class="paperminer-main">
-        <h1 class="paperminer-title">📚 PAPERMINER</h1>
+        <h1 class="paperminer-title">🔍 PAPERMINER</h1>
         <div class="divider"></div>
         <p class="paperminer-subtitle">Scientific Literature Intelligence</p>
     </div>
     """, unsafe_allow_html=True)
 
     # ============================================
-    # SIDEBAR SETTINGS WITH BLUE SLIDERS
+    # SIDEBAR
     # ============================================
     st.sidebar.markdown("### ⚙️ Settings")
     
     st.sidebar.markdown("#### Search Settings")
-    top_k = st.sidebar.slider("Number of results", 5, 50, 10, step=5)
+    top_k = st.sidebar.slider("Number of Papers to display", 5, 50, 10, step=5)
     max_len = st.sidebar.slider("Max summary length", 64, 256, 128, step=16)
     min_len = st.sidebar.slider("Min summary length", 16, 64, 32, step=8)
     
-    # Topic analysis tips
-    with st.sidebar.expander("💡 How to get better topics"):
+    with st.sidebar.expander("**💡 How to get better topics**", expanded=False):
         st.markdown("""
         - **Search for 10+ papers** for clearer topics
         - Use **specific queries** (e.g., "federated learning privacy" vs "machine learning")
@@ -611,8 +757,7 @@ def main():
         - Generic words (data, model, using) are automatically filtered out
         """)
     
-    # About section
-    with st.sidebar.expander("ℹ️ About PAPERMINER"):
+    with st.sidebar.expander("**ℹ️ About PAPERMINER**", expanded=False):
         st.markdown("""
         **PAPERMINER** helps you:
         
@@ -623,23 +768,28 @@ def main():
         
         Built for researchers, students, and curious minds.
         """)
-    
+
     # ============================================
     # MAIN TABS
     # ============================================
-    tab_summaries, tab_topics, tab_qa = st.tabs(["📄 Paper Summaries", "📊 Topic Insights", "❓ Paper Q&A"])
+    tab_summaries, tab_topics, tab_qa = st.tabs(["📄 Papers & Summaries", "📊 Topic Insights", "❓ Paper Q&A"])
     
     # ============================================
-    # SUMMARIES TAB
+    # SUMMARIES TAB - COMPACT
     # ============================================
     with tab_summaries:
-        st.header("📄 Search & Summarize Papers")
-        st.markdown("Find arXiv papers and generate AI-powered summaries.")
+        # Compact header
+        st.markdown("""
+        <div style="margin-bottom: 0.5rem;">
+            <h2 style="margin: 0; padding: 0;">📄 Search & Paper Summaries</h2>
+            <p style="margin: 0.1rem 0 0 0; color: #8b6a5a; font-size: 0.9rem;">
+            Find arXiv papers and generate AI-powered summaries.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
         
-        # Render search controls
         search_inputs = render_search_controls()
         
-        # Execute search if requested
         if search_inputs["submitted"] and search_inputs["query"]:
             with st.spinner("Searching arXiv…"):
                 results = services["search"].search_arxiv(
@@ -653,10 +803,9 @@ def main():
                     st.session_state.search_results = results
                     st.session_state.current_query = search_inputs["query"]
                     st.session_state.search_mode = search_inputs["mode"]
-                    st.session_state.selected_paper_id = None  # Reset selection
-                    st.session_state.topic_data = None  # Reset topics
+                    st.session_state.selected_paper_id = None
+                    st.session_state.topic_data = None
                     
-                    # Show topic analysis readiness
                     st.success(f"✅ Found {len(results)} papers")
                     if len(results) >= 5:
                         st.info(f"✓ Enough papers for topic analysis! Go to **Topic Insights** tab.")
@@ -665,14 +814,10 @@ def main():
                 else:
                     st.info("No papers found for this query.")
         
-        # Display results
         if st.session_state.search_results:
             st.markdown(f"### 📚 Showing {len(st.session_state.search_results)} Papers")
-            
             for idx, paper in enumerate(st.session_state.search_results):
                 render_paper_card(paper, idx, services, max_len, min_len)
-        else:
-            st.info("🔍 Enter a research topic above to search for papers.")
     
     # ============================================
     # TOPICS TAB
@@ -687,9 +832,9 @@ def main():
         render_qa_tab(services)
     
     # ============================================
-    # FOOTER SPACER
+    # FOOTER
     # ============================================
-    st.markdown('<div class="footer-spacer"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="height: 40px;"></div>', unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

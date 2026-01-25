@@ -168,7 +168,8 @@ class TopicService:
                 ngram_range=(1, 3),    # Include up to 3-word phrases
                 min_df=2,              # Term must appear in at least 2 documents
                 max_df=0.8,            # Filter out terms that appear in >80% of docs
-                tokenizer=custom_tokenizer
+                tokenizer=custom_tokenizer,
+                token_pattern=None 
             )
             
             X = vectorizer.fit_transform(texts)
