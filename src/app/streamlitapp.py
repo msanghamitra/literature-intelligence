@@ -1,10 +1,11 @@
-# src/app/streamlit_app.py
 """
 MINIMAL UI LAYER - All business logic moved to services/
+Enhanced with adaptive color palette and time-based theming
 """
 from pathlib import Path
 import sys
 import streamlit as st
+from datetime import datetime
 
 # --- Make sure the project root is on sys.path ---
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -16,6 +17,50 @@ from src.services.search_service import SearchService
 from src.services.topic_service import TopicService
 from src.services.summary_service import SummaryService
 from src.services.qa_service import QAService
+
+
+# -----------------------
+# Time-based Theme Detection
+# -----------------------
+def get_theme_colors():
+    """
+    Returns color scheme based on time of day
+    Morning (6am-6pm): Lighter, warmer tones
+    Evening (6pm-6am): Deeper, cooler tones
+    """
+    current_hour = datetime.now().hour
+    is_morning = 6 <= current_hour < 18
+    
+    if is_morning:
+        # Morning theme - Brighter, energetic
+        return {
+            "primary": "#f3893a",      # Orange - warm and energizing
+            "secondary": "#eb9830",    # Golden orange - bright accent
+            "accent": "#116b98",       # Ocean blue - cool contrast
+            "nature": "#4b633b",       # Forest green - grounding
+            "bg_main": "#faf7f5",      # Warm off-white
+            "bg_secondary": "#f5f0eb", # Light cream
+            "bg_card": "#ffffff",      # Pure white for cards
+            "text_primary": "#2a2a2a", # Dark gray
+            "text_secondary": "#5a5a5a", # Medium gray
+            "border": "#e0d5cc",       # Light warm border
+            "shadow": "rgba(17, 107, 152, 0.15)", # Soft blue shadow
+        }
+    else:
+        # Evening theme - Deeper, calming
+        return {
+            "primary": "#116b98",      # Ocean blue - calming primary
+            "secondary": "#4b633b",    # Forest green - natural accent
+            "accent": "#eb9830",       # Golden orange - warm highlight
+            "nature": "#f3893a",       # Soft orange - subtle warmth
+            "bg_main": "#0d1b2a",      # Deep navy
+            "bg_secondary": "#1b2838", # Slate blue
+            "bg_card": "#243447",      # Card background
+            "text_primary": "#e8eaed", # Light gray
+            "text_secondary": "#b8bec4", # Medium light gray
+            "border": "#3a4a5c",       # Muted blue border
+            "shadow": "rgba(235, 152, 48, 0.2)", # Warm orange glow
+        }
 
 
 # -----------------------
@@ -55,10 +100,11 @@ def init_session_state():
 # -----------------------
 def render_search_controls():
     """Render search input and controls"""
+    colors = get_theme_colors()
 
-    # Search mode with bigger label
-    st.markdown("""
-    <div style="margin-bottom: 0.3rem; font-weight: 600; font-size: 1.1rem; color: #e5679a;">
+    # Search mode with styled label
+    st.markdown(f"""
+    <div style="margin-bottom: 0.3rem; font-weight: 600; font-size: 1.1rem; color: {colors['primary']};">
     Search mode
     </div>
     """, unsafe_allow_html=True)
@@ -72,10 +118,13 @@ def render_search_controls():
         key="search_mode_radio"
     )
     
-    # Semantic search explanation - ALWAYS VISIBLE
-    st.markdown("""
-    <div style='background-color: #2a1a3a; padding: 8px 12px; border-radius: 6px; border-left: 4px solid #e5679a; margin: 8px 0 12px 0; font-size: 0.9em; color: #f0e6f6;'>
-    <strong style="color: #e5679a;">Semantic search</strong> finds papers based on meaning using embeddings. Better for complex topics.
+    # Semantic search explanation - styled info box
+    st.markdown(f"""
+    <div style='background-color: {colors['bg_card']}; padding: 10px 14px; border-radius: 8px; 
+                border-left: 4px solid {colors['accent']}; margin: 10px 0 14px 0; 
+                font-size: 0.9em; color: {colors['text_secondary']}; 
+                box-shadow: 0 2px 4px {colors['shadow']};'>
+    <strong style="color: {colors['primary']};">Semantic search</strong> finds papers based on meaning using embeddings. Better for complex topics.
     </div>
     """, unsafe_allow_html=True)
     
@@ -90,14 +139,12 @@ def render_search_controls():
         value="",
     )
     
-    # Compact button
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        st.empty()  # Spacer
+    # Centered button
+    col1, col2, col3 = st.columns([2, 1, 2])
     with col2:
-        submitted = st.button("Search arXiv", type="primary")
+        submitted = st.button("Search", type="primary", use_container_width=True)
     
-    # Placeholder message goes HERE (below search mode)
+    # Placeholder message
     if not query:
         st.info("🔍 Enter a research topic above to search for papers.")
     
@@ -155,6 +202,8 @@ def render_paper_card(paper, index, services, max_len, min_len):
 
 def render_topics_tab(services):
     """Render topics analysis tab - PURE UI LOGIC"""
+    colors = get_theme_colors()
+    
     st.header("📊 Topic Insights")
     
     if not st.session_state.search_results:
@@ -258,16 +307,16 @@ def render_topics_tab(services):
             if selected_papers:
                 st.markdown(f"### 📄 Papers in '{selected_option}'")
                 
-                # Display selected topic's keywords
+                # Display selected topic's keywords with color palette
                 selected_topic_row = topics_df[topics_df['topic_id'] == selected_topic_id].iloc[0]
                 selected_keywords = selected_topic_row['keywords'].split(', ')
                 
-                # Show keywords properly without duplication
+                # Show keywords with new color palette
                 keyword_badges = ""
+                palette_colors = [colors['primary'], colors['accent'], colors['secondary'], colors['nature']]
                 for i, kw in enumerate(selected_keywords[:5]):
-                    colors = ['#e5679a', '#da3f59', '#73378a', '#5c038c', '#e5679a']
-                    color = colors[min(i, len(colors)-1)]
-                    keyword_badges += f'<span style="background-color: {color}; color: white; padding: 6px 12px; margin: 3px; border-radius: 20px; font-size: 0.88em; display: inline-block; font-weight: 500; box-shadow: 0 2px 4px rgba(0,0,0,0.2);">{kw}</span> '
+                    color = palette_colors[i % len(palette_colors)]
+                    keyword_badges += f'<span style="background-color: {color}; color: white; padding: 6px 12px; margin: 3px; border-radius: 20px; font-size: 0.88em; display: inline-block; font-weight: 500; box-shadow: 0 2px 4px {colors["shadow"]};">{kw}</span> '
                 
                 st.markdown(f"**Key terms:** <br>{keyword_badges}", unsafe_allow_html=True)
                 
@@ -393,6 +442,449 @@ def render_qa_tab(services):
 
 
 # -----------------------
+# Dynamic CSS Generator
+# -----------------------
+def generate_css(colors):
+    """Generate CSS with current theme colors"""
+    is_morning = 6 <= datetime.now().hour < 18
+    theme_name = "Morning" if is_morning else "Evening"
+    
+    return f"""
+    <style>
+    /* ========================================
+       PAPERMINER - {theme_name} Theme
+       Adaptive Color Palette
+       ======================================== */
+    
+    /* Color Variables */
+    :root {{
+        --primary-color: {colors['primary']} !important;
+        --secondary-color: {colors['secondary']} !important;
+        --accent-color: {colors['accent']} !important;
+        --nature-color: {colors['nature']} !important;
+        --background-color: {colors['bg_main']} !important;
+        --secondary-background-color: {colors['bg_secondary']} !important;
+        --card-background: {colors['bg_card']} !important;
+        --text-primary: {colors['text_primary']} !important;
+        --text-secondary: {colors['text_secondary']} !important;
+        --border-color: {colors['border']} !important;
+        --shadow-color: {colors['shadow']} !important;
+    }}
+    
+    /* ========== MAIN LAYOUT ========== */
+    .stApp {{
+        background-color: {colors['bg_main']} !important;
+        margin-top: -60px !important;
+        padding-top: 0 !important;
+    }}
+    
+    .main .block-container {{
+        background-color: {colors['bg_main']} !important;
+        padding-top: 2rem !important;
+    }}
+    
+    /* ========== HEADER ========== */
+    .paperminer-main {{
+        text-align: center;
+        margin: -35px 0 0.5rem 0 !important;
+        padding: 25px;
+        background: transparent !important;
+        position: relative;
+    }}
+    
+    /* Title with emoji in original color and text in #116b98 */
+    .paperminer-title {{
+        font-size: 3.8rem;
+        font-weight: 900;
+        letter-spacing: 2px;
+        margin-bottom: 0 !important;
+        padding-top: 5px;
+        line-height: 1.1;
+    }}
+    
+    .paperminer-title .emoji {{
+        color: inherit !important;
+        filter: none !important;
+    }}
+    
+    .paperminer-title .title-text {{
+        color: #116b98 !important;
+    }}
+    
+    .divider {{
+        height: 4px;
+        background: linear-gradient(90deg, {colors['accent']}, #116b98, {colors['secondary']}, {colors['nature']}) !important;
+        width: 320px;
+        margin: 0 auto 0.4rem auto !important;
+        border-radius: 4px;
+        box-shadow: 0 2px 8px {colors['shadow']};
+    }}
+    
+    .paperminer-subtitle {{
+        font-size: 1.3rem;
+        color: {colors['primary']} !important;
+        font-weight: 500;
+        margin-top: 0 !important;
+        opacity: 0.95;
+        text-shadow: 0 0 10px {colors['shadow']};
+    }}
+    
+    /* ========== TABS - Lighter shades between green and blue ========== */
+    .stTabs [data-baseweb="tab"] {{
+        font-size: 1.1rem;
+        font-weight: 600;
+        padding: 14px 28px;
+        margin: 0 4px;
+        border-radius: 10px 10px 0 0;
+        transition: all 0.3s ease;
+        border: 2px solid transparent;
+    }}
+    
+    /* Tab 1 - Teal/Cyan (lighter blue-green) */
+    .stTabs [data-baseweb="tab"]:first-child:not([aria-selected="true"]) {{
+        background: linear-gradient(135deg, #2a9d8f, #26a3a3) !important;
+        color: white !important;
+        border-bottom: none;
+    }}
+    
+    .stTabs [data-baseweb="tab"]:first-child:not([aria-selected="true"]):hover {{
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px {colors['shadow']};
+    }}
+    
+    /* Tab 2 - Sea Green (middle range) */
+    .stTabs [data-baseweb="tab"]:nth-child(2):not([aria-selected="true"]) {{
+        background: linear-gradient(135deg, #3a9679, #2d8a72) !important;
+        color: white !important;
+        border-bottom: none;
+    }}
+    
+    .stTabs [data-baseweb="tab"]:nth-child(2):not([aria-selected="true"]):hover {{
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px {colors['shadow']};
+    }}
+    
+    /* Tab 3 - Forest Teal */
+    .stTabs [data-baseweb="tab"]:nth-child(3):not([aria-selected="true"]) {{
+        background: linear-gradient(135deg, #4a8565, #3d7658) !important;
+        color: white !important;
+        border-bottom: none;
+    }}
+    
+    .stTabs [data-baseweb="tab"]:nth-child(3):not([aria-selected="true"]):hover {{
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px {colors['shadow']};
+    }}
+    
+    /* Selected tab - Brighter teal */
+    .stTabs [aria-selected="true"] {{
+        background: linear-gradient(135deg, #2a9d8f, #26b3a3) !important;
+        color: white !important;
+        font-weight: 700;
+        border: 2px solid #2a9d8f;
+        border-bottom: none;
+        box-shadow: 0 0 20px rgba(42, 157, 143, 0.5), 0 4px 12px rgba(0,0,0,0.3);
+        transform: translateY(-3px);
+    }}
+    
+    /* ========== HEADERS ========== */
+    h1, h2, h3, h4 {{
+        color: {colors['primary']} !important;
+        margin-top: 0.4rem !important;
+        margin-bottom: 0.4rem !important;
+        text-shadow: 0 0 10px {colors['shadow']};
+    }}
+    
+    /* ========== RADIO BUTTONS - Circular style ========== */
+    [data-testid="stRadio"] [role="radiogroup"] [role="radio"] > div,
+    [data-testid="stRadio"] [role="radiogroup"] [role="radio"] > div > div,
+    div[data-baseweb="radio"] > div,
+    div[data-baseweb="radio"] > div > div {{
+        border-color: {colors['nature']} !important;
+        border-radius: 50% !important;
+        width: 18px !important;
+        height: 18px !important;
+    }}
+    
+    /* Inner circle for checked state */
+    [data-testid="stRadio"] [role="radiogroup"] [role="radio"][aria-checked="true"] > div > div,
+    div[data-baseweb="radio"] input:checked ~ div > div,
+    div[data-baseweb="radio"] input:checked + div > div {{
+        background-color: {colors['primary']} !important;
+        border-color: {colors['primary']} !important;
+        border-radius: 50% !important;
+        width: 10px !important;
+        height: 10px !important;
+        box-shadow: 0 0 10px {colors['shadow']};
+    }}
+    
+    /* Outer circle for checked state */
+    [data-testid="stRadio"] [role="radiogroup"] [role="radio"][aria-checked="true"] > div,
+    div[data-baseweb="radio"] input:checked ~ div,
+    div[data-baseweb="radio"] input:checked + div {{
+        border-color: {colors['primary']} !important;
+        border-radius: 50% !important;
+        border-width: 2px !important;
+    }}
+    
+    .stRadio label,
+    [data-testid="stRadio"] label {{
+        color: {colors['primary']} !important;
+        font-weight: 500;
+    }}
+    
+    /* ========== BUTTONS ========== */
+    button[kind="primary"],
+    button[data-testid="baseButton-primary"],
+    .stButton > button,
+    .stDownloadButton > button,
+    div[data-testid="stButton"] > button {{
+        background: linear-gradient(135deg, {colors['primary']}, {colors['secondary']}) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+        padding: 10px 24px !important;
+        transition: all 0.3s ease !important;
+        box-shadow: 0 4px 12px {colors['shadow']};
+    }}
+    
+    button[kind="primary"]:hover,
+    .stButton > button:hover {{
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px {colors['shadow']};
+        background: linear-gradient(135deg, {colors['secondary']}, {colors['accent']}) !important;
+    }}
+    
+    button[kind="secondary"],
+    button[data-testid="baseButton-secondary"] {{
+        background: linear-gradient(135deg, {colors['nature']}, {colors['accent']}) !important;
+        color: white !important;
+        border: none !important;
+        box-shadow: 0 4px 12px {colors['shadow']};
+    }}
+    
+    button[kind="secondary"]:hover {{
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px {colors['shadow']};
+    }}
+    
+    /* ========== SIDEBAR ========== */
+    [data-testid="stSidebar"] {{
+        background-color: {colors['bg_secondary']} !important;
+        border-right: 2px solid {colors['border']};
+    }}
+    
+    /* Sidebar main headers - Forest Green #4b633b */
+    .sidebar .stMarkdown h3,
+    [data-testid="stSidebar"] h3 {{
+        color: #4b633b !important;
+        border-bottom: 2px solid #4b633b;
+        padding-bottom: 0.6rem;
+        margin-bottom: 1rem;
+        text-shadow: 0 0 10px rgba(75, 99, 59, 0.3);
+    }}
+    
+    /* Sidebar subheaders - Forest Green */
+    .sidebar .stMarkdown h4,
+    [data-testid="stSidebar"] h4 {{
+        color: #4b633b !important;
+        font-weight: 600;
+    }}
+    
+    /* ========== SLIDERS - NUCLEAR OPTION ========== */
+    /* Kill ALL backgrounds in slider area */
+    section[data-testid="stSidebar"] .stSlider,
+    section[data-testid="stSidebar"] .stSlider *,
+    section[data-testid="stSidebar"] [data-testid="stSlider"],
+    section[data-testid="stSidebar"] [data-testid="stSlider"] *,
+    [data-testid="stSidebar"] .element-container,
+    [data-testid="stSidebar"] .stSlider > div,
+    [data-testid="stSidebar"] .stSlider > div > div,
+    [data-testid="stSidebar"] .stSlider > div > div > div,
+    [data-testid="stSidebar"] .stSlider > div > div > div > div,
+    [data-testid="stSidebar"] .stSlider div[data-baseweb="slider"],
+    [data-testid="stSidebar"] div[data-baseweb="slider"] *,
+    .stSlider,
+    .stSlider *,
+    [data-testid="stSlider"],
+    [data-testid="stSlider"] * {{
+        background-color: transparent !important;
+        background: none !important;
+        background-image: none !important;
+    }}
+    
+    /* Labels */
+    [data-testid="stSidebar"] .stSlider label,
+    .stSlider label {{
+        color: {colors['primary']} !important;
+        font-weight: 600 !important;
+        background: transparent !important;
+    }}
+    
+    /* Track container - transparent */
+    [data-testid="stSidebar"] div[data-baseweb="slider"],
+    div[data-baseweb="slider"] {{
+        background: transparent !important;
+    }}
+    
+    /* Gray unfilled track */
+    [data-testid="stSidebar"] div[data-baseweb="slider"] > div:nth-child(1),
+    div[data-baseweb="slider"] > div:nth-child(1) {{
+        background: transparent !important;
+    }}
+    
+    [data-testid="stSidebar"] div[data-baseweb="slider"] > div:nth-child(1) > div:nth-child(1),
+    div[data-baseweb="slider"] > div:nth-child(1) > div:nth-child(1) {{
+        background-color: #d0d0d0 !important;
+        height: 4px !important;
+        border-radius: 2px !important;
+    }}
+    
+    /* Green filled track (progress bar) */
+    [data-testid="stSidebar"] div[data-baseweb="slider"] > div:nth-child(1) > div:nth-child(2),
+    div[data-baseweb="slider"] > div:nth-child(1) > div:nth-child(2) {{
+        background-color: #4b633b !important;
+        background: #4b633b !important;
+        height: 4px !important;
+        border-radius: 2px !important;
+    }}
+    
+    /* Thumb container - transparent */
+    [data-testid="stSidebar"] div[data-baseweb="slider"] > div:nth-child(2),
+    div[data-baseweb="slider"] > div:nth-child(2) {{
+        background: transparent !important;
+    }}
+    
+    /* Circular orange thumb */
+    [data-testid="stSidebar"] div[data-baseweb="slider"] > div:nth-child(2) > div,
+    [data-testid="stSidebar"] div[data-baseweb="slider"] div[role="slider"],
+    div[data-baseweb="slider"] > div:nth-child(2) > div,
+    div[data-baseweb="slider"] div[role="slider"] {{
+        background-color: #eb9830 !important;
+        background: #eb9830 !important;
+        border: 3px solid #4b633b !important;
+        border-radius: 50% !important;
+        width: 20px !important;
+        height: 20px !important;
+        box-shadow: 0 2px 6px rgba(235, 152, 48, 0.5) !important;
+    }}
+    
+    /* Kill inner thumb elements */
+    [data-testid="stSidebar"] div[data-baseweb="slider"] div[role="slider"] > div,
+    [data-testid="stSidebar"] div[data-baseweb="slider"] div[role="slider"] > div > div,
+    div[data-baseweb="slider"] div[role="slider"] > div,
+    div[data-baseweb="slider"] div[role="slider"] > div > div {{
+        background: transparent !important;
+        border: none !important;
+        box-shadow: none !important;
+    }}
+    
+    /* Hide value display box */
+    [data-testid="stSidebar"] .stSlider div[data-baseweb="tooltip"],
+    .stSlider div[data-baseweb="tooltip"] {{
+        display: none !important;
+    }}
+    
+    /* ========== CHECKBOXES ========== */
+    .stCheckbox [data-baseweb="checkbox"] div:first-child,
+    [data-testid="stCheckbox"] [role="checkbox"] {{
+        border-color: {colors['primary']} !important;
+    }}
+    
+    .stCheckbox input:checked + div > div:first-child,
+    [data-testid="stCheckbox"] input:checked ~ div {{
+        background-color: {colors['primary']} !important;
+        border-color: {colors['primary']} !important;
+        box-shadow: 0 0 8px {colors['shadow']};
+    }}
+    
+    /* ========== EXPANDERS ========== */
+    .sidebar .streamlit-expanderHeader,
+    .streamlit-expanderHeader {{
+        color: {colors['primary']} !important;
+        font-weight: 700 !important;
+        background-color: {colors['bg_card']} !important;
+        border-radius: 6px;
+        border: 1px solid {colors['border']};
+    }}
+    
+    .streamlit-expanderContent {{
+        background-color: {colors['bg_card']} !important;
+        border: 1px solid {colors['border']};
+        border-radius: 0 0 8px 8px;
+    }}
+    
+    /* ========== TEXT COLORS ========== */
+    * {{
+        color: {colors['text_primary']} !important;
+    }}
+    
+    p, span, div {{
+        color: {colors['text_primary']} !important;
+    }}
+    
+    /* ========== INPUT FIELDS ========== */
+    .stTextInput > div > div > input,
+    .stTextArea > div > div > textarea,
+    .stSelectbox > div > div > select {{
+        background-color: {colors['bg_card']} !important;
+        color: {colors['text_primary']} !important;
+        border: 2px solid {colors['border']} !important;
+        border-radius: 8px;
+    }}
+    
+    .stTextInput > div > div > input:focus,
+    .stTextArea > div > div > textarea:focus {{
+        border-color: {colors['primary']} !important;
+        box-shadow: 0 0 10px {colors['shadow']};
+    }}
+    
+    /* ========== METRICS ========== */
+    [data-testid="stMetricValue"] {{
+        color: {colors['primary']} !important;
+        font-weight: 700;
+    }}
+    
+    [data-testid="stMetricLabel"] {{
+        color: {colors['secondary']} !important;
+    }}
+    
+    /* ========== ALERTS ========== */
+    .stAlert {{
+        background-color: {colors['bg_card']} !important;
+        border-left: 4px solid {colors['accent']} !important;
+        color: {colors['text_primary']} !important;
+        border-radius: 6px;
+    }}
+    
+    /* ========== CONTAINERS ========== */
+    .element-container,
+    [data-testid="stExpander"],
+    [data-testid="stVerticalBlock"] {{
+        background-color: transparent !important;
+    }}
+    </style>
+    
+    <script>
+    // Force remove slider backgrounds
+    setTimeout(function() {{
+        const sliders = document.querySelectorAll('.stSlider, [data-testid="stSlider"]');
+        sliders.forEach(function(slider) {{
+            const allDivs = slider.querySelectorAll('div');
+            allDivs.forEach(function(div) {{
+                if (!div.hasAttribute('role')) {{
+                    div.style.background = 'transparent';
+                    div.style.backgroundColor = 'transparent';
+                }}
+            }});
+        }});
+    }}, 100);
+    </script>
+    """
+
+
+# -----------------------
 # Main App
 # -----------------------
 def main():
@@ -400,6 +892,13 @@ def main():
     # Initialize
     init_session_state()
     services = init_services()
+    
+    # Get theme colors
+    colors = get_theme_colors()
+    current_hour = datetime.now().hour
+    is_morning = 6 <= current_hour < 18
+    theme_emoji = "☀️" if is_morning else "🌙"
+    theme_name = "Morning" if is_morning else "Evening"
     
     # ============================================
     # PAGE CONFIGURATION
@@ -412,328 +911,23 @@ def main():
     )
 
     # ============================================
-    # CUSTOM CSS - VIBRANT NIGHT MODE PALETTE
+    # DYNAMIC CSS
     # ============================================
-    st.markdown("""
-    <style>
-    /* FORCE OVERRIDE - Streamlit's primary color */
-    :root {
-        --primary-color: #e5679a !important;
-        --background-color: #0f0a1a !important;
-        --secondary-background-color: #1a1225 !important;
-    }
-    
-    /* Dark theme background */
-    .stApp {
-        background-color: #0f0a1a !important;
-        margin-top: -60px !important;
-        padding-top: 0 !important;
-    }
-    
-    /* Main content area */
-    .main .block-container {
-        background-color: #0f0a1a !important;
-        padding-top: 2rem !important;
-    }
-    
-    /* Main header container */
-    .paperminer-main {
-        text-align: center;
-        margin: -35px 0 0.5rem 0 !important;
-        padding: 20px;
-        background: linear-gradient(135deg, #1a1225 0%, #0f0a1a 100%);
-        border-radius: 12px;
-        box-shadow: 0 4px 20px rgba(229, 103, 154, 0.2);
-        position: relative;
-    }
-    
-    /* Main title - Hot Pink gradient */
-    .paperminer-title {
-        font-size: 3.8rem;
-        font-weight: 900;
-        background: linear-gradient(135deg, #e5679a 0%, #da3f59 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        letter-spacing: 2px;
-        margin-bottom: 0 !important;
-        padding-top: 5px;
-        line-height: 1.1;
-        text-shadow: 0 0 30px rgba(229, 103, 154, 0.3);
-    }
-    
-    /* Divider - Vibrant gradient */
-    .divider {
-        height: 4px;
-        background: linear-gradient(90deg, #5c038c, #73378a, #da3f59, #e5679a) !important;
-        width: 320px;
-        margin: 0.3rem auto 0.4rem auto !important;
-        border-radius: 4px;
-        box-shadow: 0 2px 8px rgba(229, 103, 154, 0.4);
-    }
-    
-    /* Subtitle - Hot Pink */
-    .paperminer-subtitle {
-        font-size: 1.3rem;
-        color: #e5679a !important;
-        font-weight: 500;
-        margin-top: 0 !important;
-        opacity: 0.95;
-        text-shadow: 0 0 10px rgba(229, 103, 154, 0.3);
-    }
-    
-    /* TABS - Vibrant gradient effect */
-    .stTabs [data-baseweb="tab"] {
-        font-size: 1.1rem;
-        font-weight: 600;
-        padding: 14px 28px;
-        margin: 0 4px;
-        border-radius: 10px 10px 0 0;
-        transition: all 0.3s ease;
-        border: 2px solid transparent;
-    }
-    
-    /* Tab 1 - Violet */
-    .stTabs [data-baseweb="tab"]:first-child:not([aria-selected="true"]) {
-        background: linear-gradient(135deg, #5c038c, #73378a) !important;
-        color: white !important;
-        border-bottom: none;
-    }
-    
-    .stTabs [data-baseweb="tab"]:first-child:not([aria-selected="true"]):hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(92, 3, 140, 0.5);
-    }
-    
-    /* Tab 2 - Indigo to Red gradient */
-    .stTabs [data-baseweb="tab"]:nth-child(2):not([aria-selected="true"]) {
-        background: linear-gradient(135deg, #73378a, #da3f59) !important;
-        color: white !important;
-        border-bottom: none;
-    }
-    
-    .stTabs [data-baseweb="tab"]:nth-child(2):not([aria-selected="true"]):hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(115, 55, 138, 0.5);
-    }
-    
-    /* Tab 3 - Red to Pink gradient */
-    .stTabs [data-baseweb="tab"]:nth-child(3):not([aria-selected="true"]) {
-        background: linear-gradient(135deg, #da3f59, #e5679a) !important;
-        color: white !important;
-        border-bottom: none;
-    }
-    
-    .stTabs [data-baseweb="tab"]:nth-child(3):not([aria-selected="true"]):hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(218, 63, 89, 0.5);
-    }
-    
-    /* Selected tab - Hot Pink with glow */
-    .stTabs [aria-selected="true"] {
-        background: linear-gradient(135deg, #e5679a, #da3f59) !important;
-        color: white !important;
-        font-weight: 700;
-        border: 2px solid #e5679a;
-        border-bottom: none;
-        box-shadow: 0 0 20px rgba(229, 103, 154, 0.6), 0 4px 12px rgba(0,0,0,0.3);
-        transform: translateY(-3px);
-    }
-    
-    /* Tab content headers - Hot Pink with glow */
-    h1, h2, h3, h4 {
-        color: #e5679a !important;
-        margin-top: 0.4rem !important;
-        margin-bottom: 0.4rem !important;
-        text-shadow: 0 0 10px rgba(229, 103, 154, 0.3);
-    }
-    
-    /* ========== RADIO BUTTON - Hot Pink ========== */
-    [data-testid="stRadio"] [role="radiogroup"] [role="radio"] > div,
-    [data-testid="stRadio"] [role="radiogroup"] [role="radio"] > div > div,
-    div[data-baseweb="radio"] > div,
-    div[data-baseweb="radio"] > div > div {
-        border-color: #73378a !important;
-    }
-    
-    /* Checked radio - Hot Pink with glow */
-    [data-testid="stRadio"] [role="radiogroup"] [role="radio"][aria-checked="true"] > div > div,
-    div[data-baseweb="radio"] input:checked ~ div,
-    div[data-baseweb="radio"] input:checked ~ div > div,
-    div[data-baseweb="radio"] input:checked + div,
-    div[data-baseweb="radio"] input:checked + div > div,
-    div[data-baseweb="radio"] input:checked + div > div > div {
-        background-color: #e5679a !important;
-        border-color: #e5679a !important;
-        box-shadow: 0 0 10px rgba(229, 103, 154, 0.6);
-    }
-    
-    /* Radio labels */
-    .stRadio label,
-    [data-testid="stRadio"] label {
-        color: #e5679a !important;
-        font-weight: 500;
-    }
-    
-    /* ========== BUTTONS - Vibrant gradients ========== */
-    button[kind="primary"],
-    button[data-testid="baseButton-primary"],
-    .stButton > button,
-    .stDownloadButton > button,
-    div[data-testid="stButton"] > button {
-        background: linear-gradient(135deg, #e5679a, #da3f59) !important;
-        color: white !important;
-        border: none !important;
-        border-radius: 8px !important;
-        font-weight: 600 !important;
-        padding: 10px 24px !important;
-        transition: all 0.3s ease !important;
-        box-shadow: 0 4px 12px rgba(229, 103, 154, 0.4);
-    }
-    
-    button[kind="primary"]:hover,
-    .stButton > button:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(229, 103, 154, 0.6);
-    }
-    
-    /* Secondary buttons - Violet gradient */
-    button[kind="secondary"],
-    button[data-testid="baseButton-secondary"] {
-        background: linear-gradient(135deg, #5c038c, #73378a) !important;
-        color: white !important;
-        border: none !important;
-        box-shadow: 0 4px 12px rgba(92, 3, 140, 0.4);
-    }
-    
-    button[kind="secondary"]:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(92, 3, 140, 0.6);
-    }
-    
-    /* Sidebar - Dark theme */
-    [data-testid="stSidebar"] {
-        background-color: #1a1225 !important;
-    }
-    
-    /* Sidebar headers - Hot Pink */
-    .sidebar .stMarkdown h3,
-    [data-testid="stSidebar"] h3 {
-        color: #e5679a !important;
-        border-bottom: 2px solid #e5679a;
-        padding-bottom: 0.6rem;
-        margin-bottom: 1rem;
-        text-shadow: 0 0 10px rgba(229, 103, 154, 0.3);
-    }
-    
-    .sidebar .stMarkdown h4,
-    [data-testid="stSidebar"] h4 {
-        color: #e5679a !important;
-        font-weight: 600;
-    }
-    
-    /* Slider labels - Hot Pink */
-    .stSlider label {
-        color: #e5679a !important;
-        font-weight: 600 !important;
-    }
-    
-    /* Slider track - Dark with violet tint */
-    .stSlider > div > div > div[role="slider"],
-    .stSlider [role="slider"] {
-        background-color: #2a1a3a !important;
-    }
-    
-    /* Slider handle - Hot Pink with glow */
-    .stSlider > div > div > div > div,
-    .stSlider [data-baseweb="slider"] [role="slider"] > div {
-        background-color: #e5679a !important;
-        border-color: #e5679a !important;
-        box-shadow: 0 0 10px rgba(229, 103, 154, 0.6);
-    }
-    
-    /* Checkbox - Hot Pink */
-    .stCheckbox [data-baseweb="checkbox"] div:first-child,
-    [data-testid="stCheckbox"] [role="checkbox"] {
-        border-color: #e5679a !important;
-    }
-    
-    .stCheckbox input:checked + div > div:first-child,
-    [data-testid="stCheckbox"] input:checked ~ div {
-        background-color: #e5679a !important;
-        border-color: #e5679a !important;
-        box-shadow: 0 0 8px rgba(229, 103, 154, 0.5);
-    }
-    
-    /* Expander headers */
-    .sidebar .streamlit-expanderHeader,
-    .streamlit-expanderHeader {
-        color: #e5679a !important;
-        font-weight: 700 !important;
-        background-color: #2a1a3a !important;
-        border-radius: 6px;
-    }
-    
-    /* Text colors for dark mode */
-    * {
-        color: #f0e6f6 !important;
-    }
-    
-    /* Input fields - Dark theme */
-    .stTextInput > div > div > input,
-    .stTextArea > div > div > textarea,
-    .stSelectbox > div > div > select {
-        background-color: #2a1a3a !important;
-        color: #f0e6f6 !important;
-        border: 1px solid #73378a !important;
-        border-radius: 6px;
-    }
-    
-    .stTextInput > div > div > input:focus,
-    .stTextArea > div > div > textarea:focus {
-        border-color: #e5679a !important;
-        box-shadow: 0 0 10px rgba(229, 103, 154, 0.3);
-    }
-    
-    /* Containers and cards */
-    .element-container,
-    [data-testid="stExpander"],
-    [data-testid="stVerticalBlock"] {
-        background-color: transparent !important;
-    }
-    
-    /* Metrics */
-    [data-testid="stMetricValue"] {
-        color: #e5679a !important;
-        font-weight: 700;
-    }
-    
-    [data-testid="stMetricLabel"] {
-        color: #d4b3e0 !important;
-    }
-    
-    /* Info, warning, success boxes */
-    .stAlert {
-        background-color: #2a1a3a !important;
-        border-left-color: #e5679a !important;
-        color: #f0e6f6 !important;
-    }
-    
-    /* Expander content */
-    .streamlit-expanderContent {
-        background-color: #1a1225 !important;
-        border: 1px solid #73378a;
-        border-radius: 0 0 8px 8px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    # Add cache buster to force CSS reload
+    import random
+    css_version = random.randint(1000, 9999)
+    st.markdown(f'<div id="css-reload-{css_version}"></div>', unsafe_allow_html=True)
+    st.markdown(generate_css(colors), unsafe_allow_html=True)
 
     # ============================================
-    # PAGE HEADER
+    # PAGE HEADER - Emoji in original color, title in #116b98
     # ============================================
     st.markdown("""
     <div class="paperminer-main">
-        <h1 class="paperminer-title">🔍 PAPERMINER</h1>
+        <h1 class="paperminer-title">
+            <span class="emoji">🔍</span> 
+            <span class="title-text">PAPERMINER</span>
+        </h1>
         <div class="divider"></div>
         <p class="paperminer-subtitle">Scientific Literature Intelligence</p>
     </div>
@@ -775,14 +969,14 @@ def main():
     tab_summaries, tab_topics, tab_qa = st.tabs(["📄 Papers & Summaries", "📊 Topic Insights", "❓ Paper Q&A"])
     
     # ============================================
-    # SUMMARIES TAB - COMPACT
+    # SUMMARIES TAB
     # ============================================
     with tab_summaries:
         # Compact header
-        st.markdown("""
+        st.markdown(f"""
         <div style="margin-bottom: 0.5rem;">
             <h2 style="margin: 0; padding: 0;">📄 Search & Paper Summaries</h2>
-            <p style="margin: 0.1rem 0 0 0; color: #8b6a5a; font-size: 0.9rem;">
+            <p style="margin: 0.1rem 0 0 0; color: {colors['text_secondary']}; font-size: 0.9rem;">
             Find arXiv papers and generate AI-powered summaries.
             </p>
         </div>
